@@ -1,38 +1,546 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Somewhere - Connection Test</title>
+
+    <title>Somewhere - Multiplayer Test</title>
+
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+
+        section {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        button,
+        input {
+            padding: 8px;
+            margin: 4px;
+        }
+
+        #log {
+            background: #111;
+            color: #eee;
+            padding: 12px;
+            min-height: 180px;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        .player {
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+        }
+.player-character {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background: #4caf50;
+    border-radius: 4px;
+    transform: translate(-50%, -50%);
+}
+
+.player-character.self {
+    background: #2196f3;
+}
+
+.player-label {
+    position: absolute;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+    </style>
 </head>
+
 <body>
+
     <h1>Somewhere</h1>
 
-    <p id="status">Connecting...</p>
-    <p id="player-id"></p>
+    <section>
+        <h2>Connection</h2>
 
-    <button id="ping-button" disabled>Send Test Message</button>
+        <p id="status">Connecting...</p>
+        <p>Your ID: <span id="player-id">-</span></p>
+        <p>Your name: <span id="player-name">-</span></p>
+        <p>Current dimension: <strong id="dimension">-</strong></p>
+    </section>
 
-    <pre id="output"></pre>
+    <section>
+        <h2>Change Dimension</h2>
+
+        <input
+            id="dimension-input"
+            type="text"
+            value="main"
+            maxlength="40"
+            placeholder="Dimension ID"
+        >
+
+        <button id="change-dimension">
+            Enter Dimension
+        </button>
+
+        <p>
+            Try: <code>main</code>,
+            <code>alice-room</code>,
+            or <code>test-2</code>.
+        </p>
+    </section>
+
+    <section>
+        <h2>Players in Your Dimension</h2>
+
+        <p>Total players, including you: <span id="player-count">1</span></p>
+
+        <div id="players"></div>
+    </section>
+
+<section>
+    <h2>Movement Test</h2>
+
+    <p>Use W, A, S, D to move your character.</p>
+
+    <div
+        id="game-world"
+        tabindex="0"
+        style="
+            position: relative;
+            width: 100%;
+            height: 400px;
+            background: #222;
+            border: 1px solid #555;
+            overflow: hidden;
+        "
+    ></div>
+</section>
+
+    <section>
+        <h2>Test Message</h2>
+
+        <button id="ping-button" disabled>
+            Send Test Message
+        </button>
+
+        <pre id="output"></pre>
+    </section>
+
+<section>
+    <h2>Dimension Chat</h2>
+
+    <div
+        id="chat-messages"
+        aria-live="polite"
+        style="
+            height: 250px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 12px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        "
+    ></div>
+
+    <form id="chat-form">
+        <input id="chat-input" type="text" maxlength="500" placeholder="Message your dimension..." autocomplete="off" required style="width: 70%;">
+        <button id="chat-send" type="submit" disabled>
+            Send
+        </button>
+    </form>
+
+    <p>Messages are visible only to players in your current dimension.</p>
+</section>
+
+    <section>
+        <h2>Event Log</h2>
+
+        <pre id="log"></pre>
+    </section>
 
     <script src="/socket.io/socket.io.js"></script>
+
     <script>
         const socket = io();
 
-        const status = document.getElementById("status");
-        const playerId = document.getElementById("player-id");
-        const output = document.getElementById("output");
-        const pingButton = document.getElementById("ping-button");
+        const statusElement = document.getElementById("status");
+        const playerIdElement = document.getElementById("player-id");
+        const playerNameElement = document.getElementById("player-name");
+        const dimensionElement = document.getElementById("dimension");
 
-        socket.on("connect", () => {
-            status.textContent = "Connected to Somewhere!";
-            pingButton.disabled = false;
+        const dimensionInput = document.getElementById("dimension-input");
+        const changeDimensionButton = document.getElementById("change-dimension");
+
+        const playersElement = document.getElementById("players");
+        const playerCountElement = document.getElementById("player-count");
+
+        const pingButton = document.getElementById("ping-button");
+        const outputElement = document.getElementById("output");
+        const logElement = document.getElementById("log");
+
+        const chatMessagesElement = document.getElementById("chat-messages");
+        const chatForm = document.getElementById("chat-form");
+        const chatInput = document.getElementById("chat-input");
+        const chatSendButton = document.getElementById("chat-send");
+
+        const gameWorld = document.getElementById("game-world");
+
+        // Client-side representation of our current dimension.
+        const state = {
+            playerId: null,
+            playerName: null,
+            dimensionId: null,
+            players: new Map(),
+            position: {
+                x: 200,
+                y: 200
+            }
+        };
+
+        const characterElements = new Map();
+
+        const movementKeys = new Set();
+
+        const MOVE_SPEED = 180;
+
+gameWorld.addEventListener("pointerdown", () => {
+    gameWorld.focus();
+});
+
+window.addEventListener("keydown", (event) => {
+    const key = event.key.toLowerCase();
+
+    if (["w", "a", "s", "d"].includes(key)) {
+        movementKeys.add(key);
+        event.preventDefault();
+    }
+});
+
+window.addEventListener("keyup", (event) => {
+    movementKeys.delete(event.key.toLowerCase());
+});
+
+window.addEventListener("blur", () => {
+    movementKeys.clear();
+});
+
+let previousFrameTime = performance.now();
+
+function updateMovement(currentTime) {
+    const deltaTime = Math.min(
+        (currentTime - previousFrameTime) / 1000,
+        0.05
+    );
+
+    previousFrameTime = currentTime;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (movementKeys.has("w")) dy -= 1;
+    if (movementKeys.has("s")) dy += 1;
+    if (movementKeys.has("a")) dx -= 1;
+    if (movementKeys.has("d")) dx += 1;
+
+    if (dx !== 0 || dy !== 0) {
+        const length = Math.hypot(dx, dy);
+
+        dx /= length;
+        dy /= length;
+
+        state.position.x += dx * MOVE_SPEED * deltaTime;
+        state.position.y += dy * MOVE_SPEED * deltaTime;
+
+        // Keep the character inside the test area.
+        state.position.x = Math.max(
+            12,
+            Math.min(gameWorld.clientWidth - 12, state.position.x)
+        );
+
+        state.position.y = Math.max(
+            12,
+            Math.min(gameWorld.clientHeight - 12, state.position.y)
+        );
+
+        renderCharacter({
+            id: state.playerId,
+            name: state.playerName,
+            position: state.position
         });
+    }
+
+    requestAnimationFrame(updateMovement);
+}
+
+requestAnimationFrame(updateMovement);
+
+setInterval(() => {
+    if (!socket.connected || !state.playerId) {
+        return;
+    }
+
+    socket.emit("move", {
+        x: state.position.x,
+        y: state.position.y
+    });
+}, 50);
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+
+            logElement.textContent += `[${timestamp}] ${message}\n`;
+
+            // Keep the newest messages visible.
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+    
+function renderCharacter(player) {
+    let character = characterElements.get(player.id);
+
+    if (!character) {
+        character = document.createElement("div");
+        character.className = "player-character";
+
+        const label = document.createElement("span");
+        label.className = "player-label";
+        label.textContent = player.name;
+
+        character.appendChild(label);
+        gameWorld.appendChild(character);
+
+        characterElements.set(player.id, character);
+    }
+
+    character.style.left = `${player.position.x}px`;
+    character.style.top = `${player.position.y}px`;
+
+    character.classList.toggle(
+        "self",
+        player.id === state.playerId
+    );
+}
+
+function removeCharacter(playerId) {
+    const character = characterElements.get(playerId);
+
+    if (character) {
+        character.remove();
+        characterElements.delete(playerId);
+    }
+}
+
+        function renderPlayers() {
+            playersElement.replaceChildren();
+
+            // Include the local player in the displayed list.
+            const allPlayers = [
+                {
+                    id: state.playerId,
+                    name: state.playerName,
+                    dimensionId: state.dimensionId
+                },
+                ...state.players.values()
+            ];
+
+            playerCountElement.textContent = allPlayers.length;
+
+            for (const player of allPlayers) {
+                const element = document.createElement("div");
+
+                element.className = "player";
+
+                const isSelf = player.id === state.playerId;
+
+                element.textContent =
+                    `${player.name}${isSelf ? " (You)" : ""}`;
+
+                playersElement.appendChild(element);
+            }
+        for (const player of state.players.values()) {
+    renderCharacter(player);
+}
+if (state.playerId) {
+    renderCharacter({
+        id: state.playerId,
+        name: state.playerName,
+        position: state.position
+    });
+}
+        }
+
+        function updateDimension(dimensionId) {
+            state.dimensionId = dimensionId;
+
+            dimensionElement.textContent = dimensionId;
+            dimensionInput.value = dimensionId;
+
+            renderPlayers();
+        }
+
+        // --------------------------------------------------
+        // CONNECTION
+        // --------------------------------------------------
+
+socket.on("connect", () => {
+    statusElement.textContent = "Connected";
+
+    pingButton.disabled = false;
+    changeDimensionButton.disabled = false;
+    chatSendButton.disabled = false;
+
+    log("Connected to Somewhere.");
+});
 
         socket.on("welcome", (data) => {
-            playerId.textContent = `Player ID: ${data.playerId}`;
-            output.textContent += `${data.message}\n`;
+            state.playerId = data.player.id;
+            state.playerName = data.player.name;
+state.position = data.player.position;
+
+            playerIdElement.textContent = state.playerId;
+            playerNameElement.textContent = state.playerName;
+
+            updateDimension(data.player.dimensionId);
+
+            log(`Welcome, ${state.playerName}!`);
         });
+
+socket.on("player_moved", (data) => {
+    const player = state.players.get(data.playerId);
+
+    if (!player) {
+        return;
+    }
+
+    player.position = data.position;
+
+    renderCharacter(player);
+});
+
+socket.on("disconnect", (reason) => {
+    statusElement.textContent = "Disconnected";
+
+    pingButton.disabled = true;
+    changeDimensionButton.disabled = true;
+    chatSendButton.disabled = true;
+
+    log(`Disconnected: ${reason}`);
+});
+
+        socket.on("connect_error", (error) => {
+            statusElement.textContent = `Connection error: ${error.message}`;
+
+            log(`Connection error: ${error.message}`);
+        });
+
+        // --------------------------------------------------
+        // DIMENSION STATE
+        // --------------------------------------------------
+
+        socket.on("dimension_state", (data) => {
+            state.players.clear();
+
+            for (const player of data.players) {
+                state.players.set(player.id, player);
+            }
+            for (const id of characterElements.keys()) {
+    if (id !== state.playerId) {
+        removeCharacter(id);
+    }
+}
+
+renderPlayers();
+
+            updateDimension(data.dimensionId);
+
+            log(
+                `Initial dimension state received: ${data.dimensionId}. ` +
+                `${data.players.length} other player(s).`
+            );
+        });
+
+        socket.on("dimension_changed", (data) => {
+            state.players.clear();
+
+            for (const player of data.players) {
+                state.players.set(player.id, player);
+            }
+
+            for (const id of characterElements.keys()) {
+    if (id !== state.playerId) {
+        removeCharacter(id);
+    }
+}
+
+renderPlayers();
+
+            updateDimension(data.dimensionId);
+
+            log(
+                `Entered dimension: ${data.dimensionId}. ` +
+                `${data.players.length} other player(s) present.`
+            );
+        });
+
+        // --------------------------------------------------
+        // PLAYER PRESENCE
+        // --------------------------------------------------
+
+        socket.on("player_joined", (player) => {
+            state.players.set(player.id, player);
+
+            renderPlayers();
+
+            log(`${player.name} joined ${player.dimensionId}.`);
+        });
+
+        socket.on("player_left", (data) => {
+            state.players.delete(data.playerId);
+
+            renderPlayers();
+            removeCharacter(data.playerId);
+
+            log(
+                `${data.name} left ${data.dimensionId}. ` +
+                `Reason: ${data.reason}.`
+            );
+        });
+
+        // --------------------------------------------------
+        // CHANGE DIMENSION
+        // --------------------------------------------------
+
+        changeDimensionButton.addEventListener("click", () => {
+            const dimensionId = dimensionInput.value.trim();
+
+            if (!dimensionId) {
+                log("Enter a dimension ID first.");
+                return;
+            }
+
+            log(`Requesting entry into ${dimensionId}...`);
+
+            socket.emit("change_dimension", {
+                dimensionId: dimensionId
+            });
+        });
+
+        // --------------------------------------------------
+        // TEST MESSAGES
+        // --------------------------------------------------
 
         pingButton.addEventListener("click", () => {
             socket.emit("ping_server", {
@@ -42,18 +550,63 @@
         });
 
         socket.on("pong_server", (data) => {
-            output.textContent += `${data.message}\n`;
-            output.textContent += JSON.stringify(data.received, null, 2) + "\n";
+            outputElement.textContent +=
+                `${data.message}\n` +
+                `${JSON.stringify(data.received, null, 2)}\n\n`;
+
+            log("Received pong_server response.");
         });
 
-        socket.on("disconnect", () => {
-            status.textContent = "Disconnected from Somewhere.";
-            pingButton.disabled = true;
+        // --------------------------------------------------
+        // SERVER REJECTIONS
+        // --------------------------------------------------
+
+        socket.on("request_rejected", (data) => {
+            log(`${data.action} rejected: ${data.reason}`);
         });
 
-        socket.on("connect_error", (error) => {
-            status.textContent = `Connection error: ${error.message}`;
-        });
+// --------------------------------------------------
+// DIMENSION CHAT
+// --------------------------------------------------
+
+chatForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    const message = chatInput.value.trim();
+
+    if (!message || !socket.connected) {
+        return;
+    }
+
+    socket.emit("chat_message", {
+        message: message
+    });
+
+    chatInput.value = "";
+    chatInput.focus();
+});
+
+socket.on("chat_message", (data) => {
+    // Create elements rather than injecting HTML.
+    // This prevents messages from being interpreted as markup.
+    const messageElement = document.createElement("div");
+
+    const time = new Date(data.timestamp).toLocaleTimeString();
+
+    const isSelf = data.playerId === state.playerId;
+    const sender = isSelf ? "You" : data.playerName;
+
+    messageElement.textContent =
+        `[${time}] ${sender}: ${data.message}`;
+
+    chatMessagesElement.appendChild(messageElement);
+
+    // Keep the newest message visible.
+    chatMessagesElement.scrollTop =
+        chatMessagesElement.scrollHeight;
+});
     </script>
+
 </body>
+
 </html>
