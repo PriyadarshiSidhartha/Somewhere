@@ -4,6 +4,16 @@ const path = require("path");
 const { Server } = require("socket.io");
 require("dotenv").config();
 
+const {
+    WORLD_CONFIG,
+    createPlayer,
+    getPublicPlayerState,
+    setPlayerMovementInput,
+    resetPlayerMovementInput,
+    simulateTick,
+    createDimensionSnapshots
+} = require("./simulation");
+
 const app = express();
 const httpServer = http.createServer(app);
 
@@ -38,19 +48,6 @@ function getDimensionRoom(dimensionId) {
     return `dimension:${dimensionId}`;
 }
 
-function getPublicPlayerState(player) {
-    return {
-        id: player.id,
-        name: player.name,
-        dimensionId: player.dimensionId,
-
-        position: {
-            x: player.position.x,
-            y: player.position.y
-        }
-    };
-}
-
 function getPlayersInDimension(dimensionId, excludedPlayerId = null) {
     return Array.from(players.values())
         .filter(player =>
@@ -72,35 +69,55 @@ function isValidDimensionId(dimensionId) {
 }
 
 // --------------------------------------------------
+// SIMULATION & BROADCAST LOOPS
+// --------------------------------------------------
+
+// 1. Simulation loop: 30 ticks per second
+let lastSimulationTime = performance.now();
+const simulationInterval = setInterval(() => {
+    const now = performance.now();
+    const deltaTime = (now - lastSimulationTime) / 1000;
+    lastSimulationTime = now;
+
+    if (players.size > 0) {
+        simulateTick(players.values(), deltaTime);
+    }
+}, 1000 / WORLD_CONFIG.simulationTickRate);
+
+// 2. Broadcast loop: 20 snapshots per second
+const snapshotInterval = setInterval(() => {
+    if (players.size === 0) {
+        return;
+    }
+
+    const dimensionSnapshots = createDimensionSnapshots(players.values());
+    for (const { dimensionId, snapshot } of dimensionSnapshots) {
+        io.to(getDimensionRoom(dimensionId)).emit("movement_snapshot", snapshot);
+    }
+}, 1000 / WORLD_CONFIG.snapshotRate);
+
+// --------------------------------------------------
 // SOCKET CONNECTIONS
 // --------------------------------------------------
 
 io.on("connection", (socket) => {
-const player = {
-    id: socket.id,
-    name: `Player-${socket.id.slice(0, 6)}`,
-    dimensionId: DEFAULT_DIMENSION,
-
-    position: {
-        x: 0,
-        y: 0
-    }
-};
+    const player = createPlayer(socket.id, `Player-${socket.id.slice(0, 6)}`, DEFAULT_DIMENSION);
 
     players.set(player.id, player);
 
     const initialRoom = getDimensionRoom(player.dimensionId);
 
-    // Join the default dimension.
+    // Join the default dimension room.
     socket.join(initialRoom);
 
     console.log(
         `${player.name} connected to dimension: ${player.dimensionId}`
     );
 
-    // Tell this client who they are and where they are.
+    // Tell this client who they are, their authoritative initial position, and world config.
     socket.emit("welcome", {
-        player: getPublicPlayerState(player)
+        player: getPublicPlayerState(player),
+        world: WORLD_CONFIG
     });
 
     // Give this client the existing players in its dimension.
@@ -134,6 +151,9 @@ const player = {
 
         const targetDimensionId = data.dimensionId;
         const oldDimensionId = player.dimensionId;
+
+        // Reset movement input on dimension transition.
+        resetPlayerMovementInput(player);
 
         // Nothing to do if the player is already there.
         if (targetDimensionId === oldDimensionId) {
@@ -252,63 +272,61 @@ const player = {
         );
     });
 
-// --------------------------------------------------
-// PLAYER MOVEMENT
-// --------------------------------------------------
+    // --------------------------------------------------
+    // SERVER-AUTHORITATIVE MOVEMENT INPUT
+    // --------------------------------------------------
 
-socket.on("move", (data) => {
-    if (
-        !data ||
-        !Number.isFinite(data.x) ||
-        !Number.isFinite(data.y)
-    ) {
-        return;
-    }
+    socket.on("movement_input", (data) => {
+        const activePlayer = players.get(socket.id);
+        if (!activePlayer) {
+            return;
+        }
 
-    // Reject unreasonable coordinates.
-    const MAX_COORDINATE = 1000;
-
-    if (
-        Math.abs(data.x) > MAX_COORDINATE ||
-        Math.abs(data.y) > MAX_COORDINATE
-    ) {
-        return;
-    }
-
-    // Update the authoritative player state.
-    player.position.x = data.x;
-    player.position.y = data.y;
-
-    // Broadcast the accepted position to other players
-    // in this dimension, excluding the sender.
-    socket.to(
-        getDimensionRoom(player.dimensionId)
-    ).emit("player_moved", {
-        playerId: player.id,
-        position: player.position
+        const success = setPlayerMovementInput(activePlayer, data);
+        if (!success) {
+            socket.emit("request_rejected", {
+                action: "movement_input",
+                reason: "Malformed or out-of-range directional input."
+            });
+        }
     });
-});
+
+    // Explicitly reject any legacy or malicious direct position update attempts
+    socket.on("move", () => {
+        socket.emit("request_rejected", {
+            action: "move",
+            reason: "Client-authoritative position updates are rejected. Use movement_input."
+        });
+    });
 
     // --------------------------------------------------
     // DISCONNECT
     // --------------------------------------------------
 
     socket.on("disconnect", (reason) => {
-        const room = getDimensionRoom(player.dimensionId);
+        const activePlayer = players.get(socket.id);
+        if (!activePlayer) {
+            return;
+        }
+
+        // Stop input immediately
+        resetPlayerMovementInput(activePlayer);
+
+        const room = getDimensionRoom(activePlayer.dimensionId);
 
         // Notify players who share this dimension.
         socket.to(room).emit("player_left", {
-            playerId: player.id,
-            name: player.name,
-            dimensionId: player.dimensionId,
+            playerId: activePlayer.id,
+            name: activePlayer.name,
+            dimensionId: activePlayer.dimensionId,
             reason: "disconnected"
         });
 
         // Remove the player from server state.
-        players.delete(player.id);
+        players.delete(activePlayer.id);
 
         console.log(
-            `${player.name} disconnected from ${player.dimensionId}. Reason: ${reason}`
+            `${activePlayer.name} disconnected from ${activePlayer.dimensionId}. Reason: ${reason}`
         );
     });
 });
@@ -320,3 +338,11 @@ socket.on("move", (data) => {
 httpServer.listen(PORT, () => {
     console.log(`Somewhere server running on port ${PORT}`);
 });
+
+module.exports = {
+    app,
+    httpServer,
+    players,
+    simulationInterval,
+    snapshotInterval
+};

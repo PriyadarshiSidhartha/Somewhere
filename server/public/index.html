@@ -10,7 +10,7 @@
     <style>
         body {
             font-family: sans-serif;
-            max-width: 800px;
+            max-width: 860px;
             margin: 40px auto;
             padding: 0 20px;
         }
@@ -41,29 +41,49 @@
             padding: 8px;
             border-bottom: 1px solid #ddd;
         }
-.player-character {
-    position: absolute;
-    width: 24px;
-    height: 24px;
-    background: #4caf50;
-    border-radius: 4px;
-    transform: translate(-50%, -50%);
-}
 
-.player-character.self {
-    background: #2196f3;
-}
+        .world-wrapper {
+            overflow-x: auto;
+            max-width: 100%;
+        }
 
-.player-label {
-    position: absolute;
-    bottom: 28px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: white;
-    font-size: 12px;
-    white-space: nowrap;
-    pointer-events: none;
-}
+        #game-world {
+            position: relative;
+            width: 800px;
+            height: 400px;
+            background: #222;
+            border: 1px solid #555;
+            overflow: hidden;
+            outline: none;
+        }
+
+        .player-character {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: #4caf50;
+            border-radius: 4px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            will-change: left, top;
+        }
+
+        .player-character.self {
+            background: #2196f3;
+            box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
+        }
+
+        .player-label {
+            position: absolute;
+            bottom: 28px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 12px;
+            white-space: nowrap;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px #000;
+        }
     </style>
 </head>
 
@@ -110,24 +130,15 @@
         <div id="players"></div>
     </section>
 
-<section>
-    <h2>Movement Test</h2>
+    <section>
+        <h2>Movement Test</h2>
 
-    <p>Use W, A, S, D to move your character.</p>
+        <p>Use <strong>W, A, S, D</strong> or <strong>Arrow keys</strong> to move your character. Movement is server-authoritative.</p>
 
-    <div
-        id="game-world"
-        tabindex="0"
-        style="
-            position: relative;
-            width: 100%;
-            height: 400px;
-            background: #222;
-            border: 1px solid #555;
-            overflow: hidden;
-        "
-    ></div>
-</section>
+        <div class="world-wrapper">
+            <div id="game-world" tabindex="0"></div>
+        </div>
+    </section>
 
     <section>
         <h2>Test Message</h2>
@@ -139,32 +150,32 @@
         <pre id="output"></pre>
     </section>
 
-<section>
-    <h2>Dimension Chat</h2>
+    <section>
+        <h2>Dimension Chat</h2>
 
-    <div
-        id="chat-messages"
-        aria-live="polite"
-        style="
-            height: 250px;
-            overflow-y: auto;
-            border: 1px solid #ccc;
-            padding: 10px;
-            margin-bottom: 12px;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-        "
-    ></div>
+        <div
+            id="chat-messages"
+            aria-live="polite"
+            style="
+                height: 250px;
+                overflow-y: auto;
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin-bottom: 12px;
+                white-space: pre-wrap;
+                overflow-wrap: anywhere;
+            "
+        ></div>
 
-    <form id="chat-form">
-        <input id="chat-input" type="text" maxlength="500" placeholder="Message your dimension..." autocomplete="off" required style="width: 70%;">
-        <button id="chat-send" type="submit" disabled>
-            Send
-        </button>
-    </form>
+        <form id="chat-form">
+            <input id="chat-input" type="text" maxlength="500" placeholder="Message your dimension..." autocomplete="off" required style="width: 70%;">
+            <button id="chat-send" type="submit" disabled>
+                Send
+            </button>
+        </form>
 
-    <p>Messages are visible only to players in your current dimension.</p>
-</section>
+        <p>Messages are visible only to players in your current dimension.</p>
+    </section>
 
     <section>
         <h2>Event Log</h2>
@@ -199,154 +210,265 @@
 
         const gameWorld = document.getElementById("game-world");
 
-        // Client-side representation of our current dimension.
+        // --------------------------------------------------
+        // CLIENT STATE
+        // --------------------------------------------------
+
         const state = {
             playerId: null,
             playerName: null,
             dimensionId: null,
+            // Remote players: id -> { id, name, dimensionId, position: {x,y}, targetPosition: {x,y} }
             players: new Map(),
+            // Local displayed position (with client-side prediction)
             position: {
                 x: 200,
                 y: 200
+            },
+            // Authoritative position reported by server snapshot
+            serverPosition: {
+                x: 200,
+                y: 200
+            },
+            // Centralized world configuration (synced from server welcome payload)
+            world: {
+                width: 800,
+                height: 400,
+                playerRadius: 12,
+                moveSpeed: 180
             }
         };
 
         const characterElements = new Map();
-
         const movementKeys = new Set();
+        let lastSentInput = { x: 0, y: 0 };
 
-        const MOVE_SPEED = 180;
+        // --------------------------------------------------
+        // INPUT HANDLING
+        // --------------------------------------------------
 
-gameWorld.addEventListener("pointerdown", () => {
-    gameWorld.focus();
-});
+        function isTyping(target) {
+            if (!target) return false;
+            const tagName = target.tagName ? target.tagName.toUpperCase() : "";
+            return tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable;
+        }
 
-window.addEventListener("keydown", (event) => {
-    const key = event.key.toLowerCase();
+        function calculateDirectionalInput() {
+            let dx = 0;
+            let dy = 0;
 
-    if (["w", "a", "s", "d"].includes(key)) {
-        movementKeys.add(key);
-        event.preventDefault();
-    }
-});
+            if (movementKeys.has("w") || movementKeys.has("arrowup")) dy -= 1;
+            if (movementKeys.has("s") || movementKeys.has("arrowdown")) dy += 1;
+            if (movementKeys.has("a") || movementKeys.has("arrowleft")) dx -= 1;
+            if (movementKeys.has("d") || movementKeys.has("arrowright")) dx += 1;
 
-window.addEventListener("keyup", (event) => {
-    movementKeys.delete(event.key.toLowerCase());
-});
+            return { x: dx, y: dy };
+        }
 
-window.addEventListener("blur", () => {
-    movementKeys.clear();
-});
+        function sendMovementInputIfChanged() {
+            if (!socket.connected || !state.playerId) {
+                return;
+            }
 
-let previousFrameTime = performance.now();
+            const currentInput = calculateDirectionalInput();
+            if (currentInput.x !== lastSentInput.x || currentInput.y !== lastSentInput.y) {
+                lastSentInput = currentInput;
+                socket.emit("movement_input", currentInput);
+            }
+        }
 
-function updateMovement(currentTime) {
-    const deltaTime = Math.min(
-        (currentTime - previousFrameTime) / 1000,
-        0.05
-    );
+        function clearMovementInput() {
+            if (movementKeys.size > 0) {
+                movementKeys.clear();
+                sendMovementInputIfChanged();
+            }
+        }
 
-    previousFrameTime = currentTime;
-
-    let dx = 0;
-    let dy = 0;
-
-    if (movementKeys.has("w")) dy -= 1;
-    if (movementKeys.has("s")) dy += 1;
-    if (movementKeys.has("a")) dx -= 1;
-    if (movementKeys.has("d")) dx += 1;
-
-    if (dx !== 0 || dy !== 0) {
-        const length = Math.hypot(dx, dy);
-
-        dx /= length;
-        dy /= length;
-
-        state.position.x += dx * MOVE_SPEED * deltaTime;
-        state.position.y += dy * MOVE_SPEED * deltaTime;
-
-        // Keep the character inside the test area.
-        state.position.x = Math.max(
-            12,
-            Math.min(gameWorld.clientWidth - 12, state.position.x)
-        );
-
-        state.position.y = Math.max(
-            12,
-            Math.min(gameWorld.clientHeight - 12, state.position.y)
-        );
-
-        renderCharacter({
-            id: state.playerId,
-            name: state.playerName,
-            position: state.position
+        gameWorld.addEventListener("pointerdown", () => {
+            gameWorld.focus();
         });
-    }
 
-    requestAnimationFrame(updateMovement);
-}
+        const MOVEMENT_KEY_LIST = ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"];
 
-requestAnimationFrame(updateMovement);
+        window.addEventListener("keydown", (event) => {
+            if (isTyping(event.target)) {
+                return;
+            }
 
-setInterval(() => {
-    if (!socket.connected || !state.playerId) {
-        return;
-    }
+            const key = event.key.toLowerCase();
+            if (MOVEMENT_KEY_LIST.includes(key)) {
+                event.preventDefault();
+                movementKeys.add(key);
+                sendMovementInputIfChanged();
+            }
+        });
 
-    socket.emit("move", {
-        x: state.position.x,
-        y: state.position.y
-    });
-}, 16);
+        window.addEventListener("keyup", (event) => {
+            const key = event.key.toLowerCase();
+            if (movementKeys.has(key)) {
+                movementKeys.delete(key);
+                sendMovementInputIfChanged();
+            }
+        });
+
+        window.addEventListener("blur", clearMovementInput);
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                clearMovementInput();
+            }
+        });
+
+        // --------------------------------------------------
+        // MOVEMENT SIMULATION, PREDICTION & INTERPOLATION
+        // --------------------------------------------------
+
+        let previousFrameTime = performance.now();
+
+        function updateMovement(currentTime) {
+            const deltaTime = Math.min(
+                (currentTime - previousFrameTime) / 1000,
+                0.1
+            );
+            previousFrameTime = currentTime;
+
+            // 1. Local Player Prediction
+            const input = calculateDirectionalInput();
+            let dx = input.x;
+            let dy = input.y;
+            const isMoving = dx !== 0 || dy !== 0;
+
+            if (isMoving) {
+                const mag = Math.hypot(dx, dy);
+                if (mag > 1) {
+                    dx /= mag;
+                    dy /= mag;
+                }
+
+                state.position.x += dx * state.world.moveSpeed * deltaTime;
+                state.position.y += dy * state.world.moveSpeed * deltaTime;
+
+                // Clamp to world boundaries
+                const minX = state.world.playerRadius;
+                const maxX = state.world.width - state.world.playerRadius;
+                const minY = state.world.playerRadius;
+                const maxY = state.world.height - state.world.playerRadius;
+
+                state.position.x = Math.max(minX, Math.min(maxX, state.position.x));
+                state.position.y = Math.max(minY, Math.min(maxY, state.position.y));
+            }
+
+            // 2. Local Player Server Reconciliation
+            if (state.serverPosition) {
+                const errX = state.serverPosition.x - state.position.x;
+                const errY = state.serverPosition.y - state.position.y;
+                const errorDist = Math.hypot(errX, errY);
+
+                if (errorDist > 60) {
+                    // Snap on massive drift, boundary collision, or teleport
+                    state.position.x = state.serverPosition.x;
+                    state.position.y = state.serverPosition.y;
+                } else if (!isMoving && errorDist > 0.2) {
+                    // Smoothly settle to server position when stationary
+                    const settleFactor = Math.min(1, 15 * deltaTime);
+                    state.position.x += errX * settleFactor;
+                    state.position.y += errY * settleFactor;
+                } else if (isMoving && errorDist > 5) {
+                    // Gentle correction pull during active movement
+                    const pullFactor = Math.min(1, 4 * deltaTime);
+                    state.position.x += errX * pullFactor;
+                    state.position.y += errY * pullFactor;
+                }
+            }
+
+            // 3. Render Local Player
+            if (state.playerId) {
+                renderCharacter({
+                    id: state.playerId,
+                    name: state.playerName,
+                    position: state.position
+                });
+            }
+
+            // 4. Remote Players Smooth Interpolation
+            for (const remotePlayer of state.players.values()) {
+                if (!remotePlayer.targetPosition) {
+                    continue;
+                }
+
+                const rdx = remotePlayer.targetPosition.x - remotePlayer.position.x;
+                const rdy = remotePlayer.targetPosition.y - remotePlayer.position.y;
+                const dist = Math.hypot(rdx, rdy);
+
+                if (dist > 150) {
+                    // Snap immediate warps or spawns
+                    remotePlayer.position.x = remotePlayer.targetPosition.x;
+                    remotePlayer.position.y = remotePlayer.targetPosition.y;
+                } else if (dist > 0.1) {
+                    // Smooth exponential interpolation
+                    const lerpFactor = Math.min(1, 1 - Math.exp(-15 * deltaTime));
+                    remotePlayer.position.x += rdx * lerpFactor;
+                    remotePlayer.position.y += rdy * lerpFactor;
+                } else {
+                    remotePlayer.position.x = remotePlayer.targetPosition.x;
+                    remotePlayer.position.y = remotePlayer.targetPosition.y;
+                }
+
+                renderCharacter(remotePlayer);
+            }
+
+            requestAnimationFrame(updateMovement);
+        }
+
+        requestAnimationFrame(updateMovement);
+
+        // --------------------------------------------------
+        // LOGGING & RENDERING HELPERS
+        // --------------------------------------------------
 
         function log(message) {
             const timestamp = new Date().toLocaleTimeString();
-
             logElement.textContent += `[${timestamp}] ${message}\n`;
-
-            // Keep the newest messages visible.
             logElement.scrollTop = logElement.scrollHeight;
         }
-    
-function renderCharacter(player) {
-    let character = characterElements.get(player.id);
 
-    if (!character) {
-        character = document.createElement("div");
-        character.className = "player-character";
+        function renderCharacter(player) {
+            let character = characterElements.get(player.id);
 
-        const label = document.createElement("span");
-        label.className = "player-label";
-        label.textContent = player.name;
+            if (!character) {
+                character = document.createElement("div");
+                character.className = "player-character";
 
-        character.appendChild(label);
-        gameWorld.appendChild(character);
+                const label = document.createElement("span");
+                label.className = "player-label";
+                label.textContent = player.name;
 
-        characterElements.set(player.id, character);
-    }
+                character.appendChild(label);
+                gameWorld.appendChild(character);
 
-    character.style.left = `${player.position.x}px`;
-    character.style.top = `${player.position.y}px`;
+                characterElements.set(player.id, character);
+            }
 
-    character.classList.toggle(
-        "self",
-        player.id === state.playerId
-    );
-}
+            character.style.left = `${player.position.x}px`;
+            character.style.top = `${player.position.y}px`;
 
-function removeCharacter(playerId) {
-    const character = characterElements.get(playerId);
+            character.classList.toggle(
+                "self",
+                player.id === state.playerId
+            );
+        }
 
-    if (character) {
-        character.remove();
-        characterElements.delete(playerId);
-    }
-}
+        function removeCharacter(playerId) {
+            const character = characterElements.get(playerId);
+            if (character) {
+                character.remove();
+                characterElements.delete(playerId);
+            }
+        }
 
         function renderPlayers() {
             playersElement.replaceChildren();
 
-            // Include the local player in the displayed list.
             const allPlayers = [
                 {
                     id: state.playerId,
@@ -359,112 +481,131 @@ function removeCharacter(playerId) {
             playerCountElement.textContent = allPlayers.length;
 
             for (const player of allPlayers) {
+                if (!player.id) continue;
                 const element = document.createElement("div");
-
                 element.className = "player";
-
                 const isSelf = player.id === state.playerId;
-
-                element.textContent =
-                    `${player.name}${isSelf ? " (You)" : ""}`;
-
+                element.textContent = `${player.name}${isSelf ? " (You)" : ""}`;
                 playersElement.appendChild(element);
             }
-        for (const player of state.players.values()) {
-    renderCharacter(player);
-}
-if (state.playerId) {
-    renderCharacter({
-        id: state.playerId,
-        name: state.playerName,
-        position: state.position
-    });
-}
         }
 
         function updateDimension(dimensionId) {
             state.dimensionId = dimensionId;
-
             dimensionElement.textContent = dimensionId;
             dimensionInput.value = dimensionId;
-
             renderPlayers();
         }
 
+        function syncDimensionState(dimensionId, playerList, isDimensionChange = false) {
+            state.players.clear();
+
+            // Clear remote characters
+            for (const id of characterElements.keys()) {
+                if (id !== state.playerId) {
+                    removeCharacter(id);
+                }
+            }
+
+            for (const player of playerList) {
+                state.players.set(player.id, {
+                    id: player.id,
+                    name: player.name,
+                    dimensionId: player.dimensionId,
+                    position: { x: player.position.x, y: player.position.y },
+                    targetPosition: { x: player.position.x, y: player.position.y }
+                });
+            }
+
+            if (isDimensionChange) {
+                clearMovementInput();
+            }
+
+            renderPlayers();
+            updateDimension(dimensionId);
+        }
+
         // --------------------------------------------------
-        // CONNECTION
+        // SOCKET EVENT LISTENERS
         // --------------------------------------------------
 
-socket.on("connect", () => {
-    statusElement.textContent = "Connected";
+        socket.on("connect", () => {
+            statusElement.textContent = "Connected";
 
-    pingButton.disabled = false;
-    changeDimensionButton.disabled = false;
-    chatSendButton.disabled = false;
+            pingButton.disabled = false;
+            changeDimensionButton.disabled = false;
+            chatSendButton.disabled = false;
 
-    log("Connected to Somewhere.");
-});
+            log("Connected to Somewhere.");
+        });
 
         socket.on("welcome", (data) => {
             state.playerId = data.player.id;
             state.playerName = data.player.name;
-state.position = data.player.position;
+            state.position.x = data.player.position.x;
+            state.position.y = data.player.position.y;
+            state.serverPosition.x = data.player.position.x;
+            state.serverPosition.y = data.player.position.y;
+
+            if (data.world) {
+                state.world = Object.assign(state.world, data.world);
+            }
 
             playerIdElement.textContent = state.playerId;
             playerNameElement.textContent = state.playerName;
 
             updateDimension(data.player.dimensionId);
 
-            log(`Welcome, ${state.playerName}!`);
+            // Establish stationary input state on connect
+            lastSentInput = { x: 0, y: 0 };
+            socket.emit("movement_input", { x: 0, y: 0 });
+
+            log(`Welcome, ${state.playerName}! Authoritative position: (${data.player.position.x}, ${data.player.position.y})`);
         });
 
-socket.on("player_moved", (data) => {
-    const player = state.players.get(data.playerId);
+        // Periodic server snapshots (15-20 Hz)
+        socket.on("movement_snapshot", (data) => {
+            if (!data || !Array.isArray(data.players)) {
+                return;
+            }
 
-    if (!player) {
-        return;
-    }
+            for (const update of data.players) {
+                if (update.id === state.playerId) {
+                    state.serverPosition.x = update.position.x;
+                    state.serverPosition.y = update.position.y;
+                } else {
+                    const remote = state.players.get(update.id);
+                    if (remote) {
+                        remote.targetPosition.x = update.position.x;
+                        remote.targetPosition.y = update.position.y;
+                    }
+                }
+            }
+        });
 
-    player.position = data.position;
+        socket.on("disconnect", (reason) => {
+            statusElement.textContent = "Disconnected";
 
-    renderCharacter(player);
-});
+            pingButton.disabled = true;
+            changeDimensionButton.disabled = true;
+            chatSendButton.disabled = true;
 
-socket.on("disconnect", (reason) => {
-    statusElement.textContent = "Disconnected";
+            clearMovementInput();
 
-    pingButton.disabled = true;
-    changeDimensionButton.disabled = true;
-    chatSendButton.disabled = true;
-
-    log(`Disconnected: ${reason}`);
-});
+            log(`Disconnected: ${reason}`);
+        });
 
         socket.on("connect_error", (error) => {
             statusElement.textContent = `Connection error: ${error.message}`;
-
             log(`Connection error: ${error.message}`);
         });
 
         // --------------------------------------------------
-        // DIMENSION STATE
+        // DIMENSION EVENTS
         // --------------------------------------------------
 
         socket.on("dimension_state", (data) => {
-            state.players.clear();
-
-            for (const player of data.players) {
-                state.players.set(player.id, player);
-            }
-            for (const id of characterElements.keys()) {
-    if (id !== state.playerId) {
-        removeCharacter(id);
-    }
-}
-
-renderPlayers();
-
-            updateDimension(data.dimensionId);
+            syncDimensionState(data.dimensionId, data.players, false);
 
             log(
                 `Initial dimension state received: ${data.dimensionId}. ` +
@@ -473,21 +614,7 @@ renderPlayers();
         });
 
         socket.on("dimension_changed", (data) => {
-            state.players.clear();
-
-            for (const player of data.players) {
-                state.players.set(player.id, player);
-            }
-
-            for (const id of characterElements.keys()) {
-    if (id !== state.playerId) {
-        removeCharacter(id);
-    }
-}
-
-renderPlayers();
-
-            updateDimension(data.dimensionId);
+            syncDimensionState(data.dimensionId, data.players, true);
 
             log(
                 `Entered dimension: ${data.dimensionId}. ` +
@@ -495,33 +622,31 @@ renderPlayers();
             );
         });
 
-        // --------------------------------------------------
-        // PLAYER PRESENCE
-        // --------------------------------------------------
-
         socket.on("player_joined", (player) => {
-            state.players.set(player.id, player);
+            state.players.set(player.id, {
+                id: player.id,
+                name: player.name,
+                dimensionId: player.dimensionId,
+                position: { x: player.position.x, y: player.position.y },
+                targetPosition: { x: player.position.x, y: player.position.y }
+            });
 
             renderPlayers();
+            renderCharacter(player);
 
             log(`${player.name} joined ${player.dimensionId}.`);
         });
 
         socket.on("player_left", (data) => {
             state.players.delete(data.playerId);
-
-            renderPlayers();
             removeCharacter(data.playerId);
+            renderPlayers();
 
             log(
                 `${data.name} left ${data.dimensionId}. ` +
                 `Reason: ${data.reason}.`
             );
         });
-
-        // --------------------------------------------------
-        // CHANGE DIMENSION
-        // --------------------------------------------------
 
         changeDimensionButton.addEventListener("click", () => {
             const dimensionId = dimensionInput.value.trim();
@@ -539,7 +664,7 @@ renderPlayers();
         });
 
         // --------------------------------------------------
-        // TEST MESSAGES
+        // TEST MESSAGES & REJECTIONS
         // --------------------------------------------------
 
         pingButton.addEventListener("click", () => {
@@ -557,54 +682,41 @@ renderPlayers();
             log("Received pong_server response.");
         });
 
-        // --------------------------------------------------
-        // SERVER REJECTIONS
-        // --------------------------------------------------
-
         socket.on("request_rejected", (data) => {
-            log(`${data.action} rejected: ${data.reason}`);
+            log(`[Server Rejected] ${data.action}: ${data.reason}`);
         });
 
-// --------------------------------------------------
-// DIMENSION CHAT
-// --------------------------------------------------
+        // --------------------------------------------------
+        // DIMENSION CHAT
+        // --------------------------------------------------
 
-chatForm.addEventListener("submit", (event) => {
-    event.preventDefault();
+        chatForm.addEventListener("submit", (event) => {
+            event.preventDefault();
 
-    const message = chatInput.value.trim();
+            const message = chatInput.value.trim();
 
-    if (!message || !socket.connected) {
-        return;
-    }
+            if (!message || !socket.connected) {
+                return;
+            }
 
-    socket.emit("chat_message", {
-        message: message
-    });
+            socket.emit("chat_message", {
+                message: message
+            });
 
-    chatInput.value = "";
-    chatInput.focus();
-});
+            chatInput.value = "";
+            chatInput.focus();
+        });
 
-socket.on("chat_message", (data) => {
-    // Create elements rather than injecting HTML.
-    // This prevents messages from being interpreted as markup.
-    const messageElement = document.createElement("div");
+        socket.on("chat_message", (data) => {
+            const messageElement = document.createElement("div");
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const isSelf = data.playerId === state.playerId;
+            const sender = isSelf ? "You" : data.playerName;
 
-    const time = new Date(data.timestamp).toLocaleTimeString();
-
-    const isSelf = data.playerId === state.playerId;
-    const sender = isSelf ? "You" : data.playerName;
-
-    messageElement.textContent =
-        `[${time}] ${sender}: ${data.message}`;
-
-    chatMessagesElement.appendChild(messageElement);
-
-    // Keep the newest message visible.
-    chatMessagesElement.scrollTop =
-        chatMessagesElement.scrollHeight;
-});
+            messageElement.textContent = `[${time}] ${sender}: ${data.message}`;
+            chatMessagesElement.appendChild(messageElement);
+            chatMessagesElement.scrollTop = chatMessagesElement.scrollHeight;
+        });
     </script>
 
 </body>
