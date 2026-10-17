@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Somewhere - Connection Test</title>
+</head>
+<body>
+    <h1>Somewhere</h1>
+
+    <p id="status">Connecting...</p>
+    <p id="player-id"></p>
+
+    <button id="ping-button" disabled>Send Test Message</button>
+
+    <pre id="output"></pre>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const status = document.getElementById("status");
+        const playerId = document.getElementById("player-id");
+        const output = document.getElementById("output");
+        const pingButton = document.getElementById("ping-button");
+
+        socket.on("connect", () => {
+            status.textContent = "Connected to Somewhere!";
+            pingButton.disabled = false;
+        });
+
+        socket.on("welcome", (data) => {
+            playerId.textContent = `Player ID: ${data.playerId}`;
+            output.textContent += `${data.message}\n`;
+        });
+
+        pingButton.addEventListener("click", () => {
+            socket.emit("ping_server", {
+                message: "Hello from the browser!",
+                timestamp: Date.now()
+            });
+        });
+
+        socket.on("pong_server", (data) => {
+            output.textContent += `${data.message}\n`;
+            output.textContent += JSON.stringify(data.received, null, 2) + "\n";
+        });
+
+        socket.on("disconnect", () => {
+            status.textContent = "Disconnected from Somewhere.";
+            pingButton.disabled = true;
+        });
+
+        socket.on("connect_error", (error) => {
+            status.textContent = `Connection error: ${error.message}`;
+        });
+    </script>
+</body>
+</html>
