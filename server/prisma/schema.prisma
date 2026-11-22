@@ -1,0 +1,42 @@
+// Prisma schema for "Somewhere" — a minimal multiplayer 3D block game.
+// We use MongoDB as the database via Prisma 6 (native MongoDB connector).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// -------------------------------------------------
+// User
+// -------------------------------------------------
+// One record per Google account.
+// googleId is the stable, unique ID Google assigns to every user.
+// We store their last known 3D position so they resume where they left off.
+model User {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  googleId    String   @unique   // Google's "sub" claim — never changes
+  displayName String             // e.g. "Alice Smith" from their Google profile
+  posX        Float    @default(0)
+  posY        Float    @default(2.5) // Eye height above the ground
+  posZ        Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// -------------------------------------------------
+// Block
+// -------------------------------------------------
+// Each row is one block that exists in the world.
+// x, y, z are integer grid coordinates.
+// type is the block material (e.g. "dirt", "grass", "stone", "wood", "sand").
+model Block {
+  id   String @id @default(auto()) @map("_id") @db.ObjectId
+  x    Int
+  y    Int
+  z    Int
+  type String @default("dirt")
+}

@@ -1,57 +1,62 @@
+// simulation.js — Server-authoritative 3D movement simulation.
+//
+// The server is the source of truth for all player positions.
+// Clients send directional input (which keys are pressed + camera yaw).
+// The server computes actual world-space velocity and updates positions.
+//
+// Why server-authoritative? It prevents clients from teleporting themselves
+// or cheating by sending fake positions.
+
 // --------------------------------------------------
-// WORLD & MOVEMENT SIMULATION CONFIGURATION
+// WORLD CONFIGURATION
 // --------------------------------------------------
 
 const WORLD_CONFIG = {
-    width: 800,
-    height: 400,
-    playerRadius: 12,
-    moveSpeed: 180, // units per second
-    simulationTickRate: 30, // 30 ticks per second (~33.33ms)
-    snapshotRate: 20 // 20 broadcasts per second (50ms)
-};
-
-const WORLD_BOUNDS = {
-    minX: WORLD_CONFIG.playerRadius,
-    maxX: WORLD_CONFIG.width - WORLD_CONFIG.playerRadius,
-    minY: WORLD_CONFIG.playerRadius,
-    maxY: WORLD_CONFIG.height - WORLD_CONFIG.playerRadius
-};
-
-const DEFAULT_SPAWN = {
-    x: 200,
-    y: 200
+    moveSpeed: 8,          // units per second (feels like a walking pace)
+    simulationTickRate: 30, // 30 ticks per second (~33ms per tick)
+    snapshotRate: 20,       // 20 position broadcasts per second (50ms)
+    // XZ bounds — same as worldState.js limit (30 units from center)
+    boundXZ: 30,
+    // Y: player walks at a fixed height above the ground
+    defaultY: 2.5,
 };
 
 // --------------------------------------------------
-// PLAYER STATE CREATION & SERIALIZATION
+// PLAYER STATE
 // --------------------------------------------------
 
-function createPlayer(id, name, dimensionId = "main", spawnPos = DEFAULT_SPAWN) {
+function createPlayer(socketId, displayName, spawnPos) {
     return {
-        id,
-        name: name || `Player-${id.slice(0, 6)}`,
-        dimensionId,
+        id: socketId,
+        // The database User ID — set after authentication.
+        userId: null,
+        name: displayName || `Player-${socketId.slice(0, 6)}`,
         position: {
-            x: Math.max(WORLD_BOUNDS.minX, Math.min(WORLD_BOUNDS.maxX, spawnPos.x)),
-            y: Math.max(WORLD_BOUNDS.minY, Math.min(WORLD_BOUNDS.maxY, spawnPos.y))
+            x: spawnPos ? spawnPos.x : 0,
+            y: spawnPos ? spawnPos.y : WORLD_CONFIG.defaultY,
+            z: spawnPos ? spawnPos.z : 0,
         },
+        // Movement input: direction keys + camera yaw angle in radians.
         input: {
-            x: 0,
-            y: 0
-        }
+            forward: 0,  // -1 to 1 (negative = backward)
+            strafe: 0,   // -1 to 1 (negative = left)
+            yaw: 0,      // camera horizontal rotation (radians)
+        },
     };
 }
 
+// What we send to other clients — only public information.
+// Never expose internal input state.
 function getPublicPlayerState(player) {
     return {
         id: player.id,
         name: player.name,
-        dimensionId: player.dimensionId,
         position: {
-            x: Math.round(player.position.x * 100) / 100,
-            y: Math.round(player.position.y * 100) / 100
-        }
+            x: Math.round(player.position.x * 1000) / 1000,
+            y: Math.round(player.position.y * 1000) / 1000,
+            z: Math.round(player.position.z * 1000) / 1000,
+        },
+        yaw: Math.round(player.input.yaw * 1000) / 1000, // for orienting other players' meshes
     };
 }
 
@@ -60,22 +65,17 @@ function getPublicPlayerState(player) {
 // --------------------------------------------------
 
 function isValidMovementInput(data) {
-    if (!data || typeof data !== "object") {
-        return false;
-    }
+    if (!data || typeof data !== "object") return false;
 
-    if (typeof data.x !== "number" || !Number.isFinite(data.x)) {
-        return false;
-    }
+    // forward/strafe must be numbers in [-1, 1]
+    if (typeof data.forward !== "number" || !Number.isFinite(data.forward)) return false;
+    if (typeof data.strafe  !== "number" || !Number.isFinite(data.strafe))  return false;
+    if (typeof data.yaw     !== "number" || !Number.isFinite(data.yaw))     return false;
 
-    if (typeof data.y !== "number" || !Number.isFinite(data.y)) {
-        return false;
-    }
-
-    // Directional inputs must be in the range [-1, 1]
-    if (data.x < -1 || data.x > 1 || data.y < -1 || data.y > 1) {
-        return false;
-    }
+    if (data.forward < -1 || data.forward > 1) return false;
+    if (data.strafe  < -1 || data.strafe  > 1) return false;
+    // yaw is any angle in radians — just check it's a reasonable number
+    if (Math.abs(data.yaw) > 2 * Math.PI * 100) return false;
 
     return true;
 }
@@ -84,104 +84,88 @@ function setPlayerMovementInput(player, inputData) {
     if (!isValidMovementInput(inputData)) {
         return false;
     }
-
-    // Only directional intent is accepted; coordinates are ignored
-    player.input.x = inputData.x;
-    player.input.y = inputData.y;
+    player.input.forward = inputData.forward;
+    player.input.strafe  = inputData.strafe;
+    player.input.yaw     = inputData.yaw;
     return true;
 }
 
 function resetPlayerMovementInput(player) {
     if (player && player.input) {
-        player.input.x = 0;
-        player.input.y = 0;
+        player.input.forward = 0;
+        player.input.strafe  = 0;
     }
 }
 
 // --------------------------------------------------
-// MOVEMENT SIMULATION TICK
+// MOVEMENT SIMULATION
 // --------------------------------------------------
 
 function updatePlayerPosition(player, deltaTime) {
-    let dx = player.input.x;
-    let dy = player.input.y;
+    const { forward, strafe, yaw } = player.input;
 
-    if (dx === 0 && dy === 0) {
-        return;
-    }
+    if (forward === 0 && strafe === 0) return;
 
-    // Normalize diagonal movement if magnitude > 1
-    const magnitude = Math.hypot(dx, dy);
+    // Decompose forward/strafe into world-space XZ velocity using the camera yaw.
+    // yaw=0 → facing +Z, yaw=π/2 → facing +X (standard 3D convention).
+    const sinYaw = Math.sin(yaw);
+    const cosYaw = Math.cos(yaw);
+
+    // Forward vector in world XZ: (sinYaw, cosYaw)
+    // Strafe vector is perpendicular: (cosYaw, -sinYaw)
+    let dx = sinYaw * forward + cosYaw * strafe;
+    let dz = cosYaw * forward - sinYaw * strafe;
+
+    // Normalize diagonal movement so you don't go faster diagonally.
+    const magnitude = Math.hypot(dx, dz);
     if (magnitude > 1) {
         dx /= magnitude;
-        dy /= magnitude;
+        dz /= magnitude;
     }
 
-    player.position.x += dx * WORLD_CONFIG.moveSpeed * deltaTime;
-    player.position.y += dy * WORLD_CONFIG.moveSpeed * deltaTime;
+    // Cap delta time to prevent huge jumps on lag spikes.
+    const dt = Math.min(deltaTime, 0.1);
 
-    // Constrain position within server-authoritative world boundaries
-    player.position.x = Math.max(
-        WORLD_BOUNDS.minX,
-        Math.min(WORLD_BOUNDS.maxX, player.position.x)
-    );
-    player.position.y = Math.max(
-        WORLD_BOUNDS.minY,
-        Math.min(WORLD_BOUNDS.maxY, player.position.y)
-    );
+    player.position.x += dx * WORLD_CONFIG.moveSpeed * dt;
+    player.position.z += dz * WORLD_CONFIG.moveSpeed * dt;
+
+    // Clamp to world XZ bounds.
+    const b = WORLD_CONFIG.boundXZ;
+    player.position.x = Math.max(-b, Math.min(b, player.position.x));
+    player.position.z = Math.max(-b, Math.min(b, player.position.z));
+
+    // Y stays fixed (no gravity/jumping in MVP).
+    player.position.y = WORLD_CONFIG.defaultY;
 }
 
 function simulateTick(playersIterable, deltaTime) {
-    // Prevent excessive movement caused by unusually large elapsed-time values
-    const cappedDelta = Math.min(Math.max(deltaTime, 0), 0.1);
-
     for (const player of playersIterable) {
-        updatePlayerPosition(player, cappedDelta);
+        updatePlayerPosition(player, deltaTime);
     }
 }
 
 // --------------------------------------------------
-// SNAPSHOT GENERATION
+// SNAPSHOT GENERATION (broadcast to clients)
 // --------------------------------------------------
 
-function createDimensionSnapshots(playersIterable) {
-    const dimensionMap = new Map();
-    const timestamp = Date.now();
-
+function createSnapshot(playersIterable) {
+    const playersList = [];
     for (const player of playersIterable) {
-        let list = dimensionMap.get(player.dimensionId);
-        if (!list) {
-            list = [];
-            dimensionMap.set(player.dimensionId, list);
-        }
-
-        list.push({
+        playersList.push({
             id: player.id,
             position: {
-                x: Math.round(player.position.x * 100) / 100,
-                y: Math.round(player.position.y * 100) / 100
-            }
+                x: Math.round(player.position.x * 1000) / 1000,
+                y: Math.round(player.position.y * 1000) / 1000,
+                z: Math.round(player.position.z * 1000) / 1000,
+            },
+            yaw: Math.round(player.input.yaw * 1000) / 1000,
         });
     }
-
-    const snapshots = [];
-    for (const [dimensionId, playersList] of dimensionMap.entries()) {
-        snapshots.push({
-            dimensionId,
-            snapshot: {
-                timestamp,
-                players: playersList
-            }
-        });
-    }
-
-    return snapshots;
+    return { timestamp: Date.now(), players: playersList };
 }
 
 module.exports = {
     WORLD_CONFIG,
-    WORLD_BOUNDS,
-    DEFAULT_SPAWN,
     createPlayer,
     getPublicPlayerState,
     isValidMovementInput,
@@ -189,5 +173,5 @@ module.exports = {
     resetPlayerMovementInput,
     updatePlayerPosition,
     simulateTick,
-    createDimensionSnapshots
+    createSnapshot,
 };

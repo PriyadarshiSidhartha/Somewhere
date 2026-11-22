@@ -4,721 +4,806 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Somewhere - Multiplayer Test</title>
-
+    <title>Somewhere</title>
     <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: sans-serif;
-            max-width: 860px;
-            margin: 40px auto;
-            padding: 0 20px;
-        }
-
-        section {
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 16px 0;
-        }
-
-        button,
-        input {
-            padding: 8px;
-            margin: 4px;
-        }
-
-        #log {
-            background: #111;
+            background: #1a1a2e;
+            font-family: 'Segoe UI', sans-serif;
             color: #eee;
-            padding: 12px;
-            min-height: 180px;
-            overflow-wrap: anywhere;
-            white-space: pre-wrap;
-        }
-
-        .player {
-            padding: 8px;
-            border-bottom: 1px solid #ddd;
-        }
-
-        .world-wrapper {
-            overflow-x: auto;
-            max-width: 100%;
-        }
-
-        #game-world {
-            position: relative;
-            width: 800px;
-            height: 400px;
-            background: #222;
-            border: 1px solid #555;
             overflow: hidden;
-            outline: none;
         }
 
-        .player-character {
+        /* ---- LOGIN SCREEN ---- */
+        #login-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 24px;
+        }
+        #login-screen h1 {
+            font-size: 3rem;
+            letter-spacing: 4px;
+            color: #7ecfff;
+        }
+        #login-screen p { color: #aaa; font-size: 1rem; }
+        #google-login-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 28px;
+            background: #fff;
+            color: #333;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        #google-login-btn:hover { background: #f0f0f0; }
+
+        /* ---- GAME SCREEN ---- */
+        #game-screen {
+            display: none;
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Crosshair in center of screen */
+        #crosshair {
             position: absolute;
-            width: 24px;
-            height: 24px;
-            background: #4caf50;
-            border-radius: 4px;
+            top: 50%;
+            left: 50%;
             transform: translate(-50%, -50%);
+            color: rgba(255,255,255,0.8);
+            font-size: 24px;
             pointer-events: none;
-            will-change: left, top;
+            user-select: none;
+            text-shadow: 1px 1px 2px #000;
         }
 
-        .player-character.self {
-            background: #2196f3;
-            box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
-        }
-
-        .player-label {
+        /* HUD: player name top-left */
+        #hud {
             position: absolute;
-            bottom: 28px;
+            top: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.5);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            pointer-events: none;
+        }
+        #hud .coords { font-size: 0.75rem; color: #aaa; margin-top: 4px; }
+
+        /* Block type selector */
+        #block-selector {
+            position: absolute;
+            bottom: 20px;
             left: 50%;
             transform: translateX(-50%);
-            color: white;
-            font-size: 12px;
-            white-space: nowrap;
+            display: flex;
+            gap: 8px;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 12px;
+            border-radius: 8px;
+        }
+        .block-btn {
+            width: 44px;
+            height: 44px;
+            border: 2px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.65rem;
+            font-weight: bold;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .block-btn.active { border-color: #fff; }
+
+        /* ---- CHAT ---- */
+        #chat-container {
+            position: absolute;
+            bottom: 20px;
+            right: 16px;
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        #chat-messages {
+            background: rgba(0,0,0,0.5);
+            border-radius: 6px;
+            padding: 8px;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 0.8rem;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        #chat-messages div { margin-bottom: 4px; }
+        #chat-messages .self { color: #7ecfff; }
+        #chat-form {
+            display: flex;
+            gap: 6px;
+        }
+        #chat-input {
+            flex: 1;
+            padding: 6px 10px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #eee;
+            font-size: 0.85rem;
+            outline: none;
+        }
+        #chat-send {
+            padding: 6px 12px;
+            background: #3a86ff;
+            border: none;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        #chat-send:hover { background: #2167d1; }
+
+        /* Pointer-lock click-to-play overlay */
+        #click-to-play {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.75);
+            padding: 20px 36px;
+            border-radius: 10px;
+            text-align: center;
             pointer-events: none;
-            text-shadow: 1px 1px 2px #000;
+        }
+        #click-to-play h2 { margin-bottom: 8px; }
+        #click-to-play p { font-size: 0.85rem; color: #aaa; }
+
+        /* Controls help */
+        #controls-help {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0,0,0,0.5);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #aaa;
+            line-height: 1.6;
+            pointer-events: none;
         }
     </style>
 </head>
 
 <body>
 
-    <h1>Somewhere</h1>
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen">
+        <h1>Somewhere</h1>
+        <p>A minimal multiplayer 3D block world</p>
+        <a id="google-login-btn" href="/auth/google">
+            <!-- Google logo SVG -->
+            <svg width="20" height="20" viewBox="0 0 48 48">
+                <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.3 9 3.4l6.7-6.7C35.8 2.5 30.3 0 24 0 14.7 0 6.8 5.4 2.9 13.3l7.8 6C12.4 13 17.8 9.5 24 9.5z"/>
+                <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8C43.4 37.3 46.5 31.3 46.5 24.5z"/>
+                <path fill="#FBBC05" d="M10.7 28.7A14.3 14.3 0 0 1 10 24c0-1.6.3-3.2.7-4.7l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.9 10.7l7.8-6z"/>
+                <path fill="#34A853" d="M24 48c6.3 0 11.6-2.1 15.5-5.7l-7.5-5.8c-2.1 1.4-4.7 2.2-8 2.2-6.2 0-11.5-4.2-13.3-9.9l-7.8 6C6.8 42.6 14.7 48 24 48z"/>
+            </svg>
+            Continue with Google
+        </a>
+    </div>
 
-    <section>
-        <h2>Connection</h2>
+    <!-- GAME SCREEN -->
+    <div id="game-screen">
+        <canvas id="game-canvas"></canvas>
 
-        <p id="status">Connecting...</p>
-        <p>Your ID: <span id="player-id">-</span></p>
-        <p>Your name: <span id="player-name">-</span></p>
-        <p>Current dimension: <strong id="dimension">-</strong></p>
-    </section>
+        <!-- Crosshair -->
+        <div id="crosshair">+</div>
 
-    <section>
-        <h2>Change Dimension</h2>
-
-        <input
-            id="dimension-input"
-            type="text"
-            value="main"
-            maxlength="40"
-            placeholder="Dimension ID"
-        >
-
-        <button id="change-dimension">
-            Enter Dimension
-        </button>
-
-        <p>
-            Try: <code>main</code>,
-            <code>alice-room</code>,
-            or <code>test-2</code>.
-        </p>
-    </section>
-
-    <section>
-        <h2>Players in Your Dimension</h2>
-
-        <p>Total players, including you: <span id="player-count">1</span></p>
-
-        <div id="players"></div>
-    </section>
-
-    <section>
-        <h2>Movement Test</h2>
-
-        <p>Use <strong>W, A, S, D</strong> or <strong>Arrow keys</strong> to move your character. Movement is server-authoritative.</p>
-
-        <div class="world-wrapper">
-            <div id="game-world" tabindex="0"></div>
+        <!-- Click-to-play hint (shown when pointer is not locked) -->
+        <div id="click-to-play">
+            <h2>Click to Play</h2>
+            <p>Your mouse will be captured for first-person view.<br>Press <strong>Escape</strong> to release.</p>
         </div>
-    </section>
 
-    <section>
-        <h2>Test Message</h2>
+        <!-- HUD -->
+        <div id="hud">
+            <div>👤 <span id="hud-name">-</span></div>
+            <div class="coords" id="hud-coords">x: 0 | y: 0 | z: 0</div>
+            <div class="coords" id="hud-players">Players: 1</div>
+        </div>
 
-        <button id="ping-button" disabled>
-            Send Test Message
-        </button>
+        <!-- Controls help -->
+        <div id="controls-help">
+            WASD — Move<br>
+            Mouse — Look<br>
+            Left Click — Remove block<br>
+            Right Click — Place block<br>
+            Enter — Send chat
+        </div>
 
-        <pre id="output"></pre>
-    </section>
+        <!-- Block type selector -->
+        <div id="block-selector">
+            <div class="block-btn active" data-type="dirt" style="background:#8B6914" title="Dirt">Dirt</div>
+            <div class="block-btn" data-type="grass" style="background:#4a7c59" title="Grass">Grass</div>
+            <div class="block-btn" data-type="stone" style="background:#888" title="Stone">Stone</div>
+            <div class="block-btn" data-type="wood" style="background:#8B4513" title="Wood">Wood</div>
+            <div class="block-btn" data-type="sand" style="background:#c2b280" title="Sand">Sand</div>
+        </div>
 
-    <section>
-        <h2>Dimension Chat</h2>
+        <!-- Chat -->
+        <div id="chat-container">
+            <div id="chat-messages"></div>
+            <form id="chat-form">
+                <input id="chat-input" type="text" maxlength="500"
+                    placeholder="Press Enter to chat..." autocomplete="off">
+                <button id="chat-send" type="submit">Send</button>
+            </form>
+        </div>
+    </div>
 
-        <div
-            id="chat-messages"
-            aria-live="polite"
-            style="
-                height: 250px;
-                overflow-y: auto;
-                border: 1px solid #ccc;
-                padding: 10px;
-                margin-bottom: 12px;
-                white-space: pre-wrap;
-                overflow-wrap: anywhere;
-            "
-        ></div>
-
-        <form id="chat-form">
-            <input id="chat-input" type="text" maxlength="500" placeholder="Message your dimension..." autocomplete="off" required style="width: 70%;">
-            <button id="chat-send" type="submit" disabled>
-                Send
-            </button>
-        </form>
-
-        <p>Messages are visible only to players in your current dimension.</p>
-    </section>
-
-    <section>
-        <h2>Event Log</h2>
-
-        <pre id="log"></pre>
-    </section>
-
+    <!-- Socket.IO client library (served by our server) -->
     <script src="/socket.io/socket.io.js"></script>
 
-    <script>
-        const socket = io();
+    <!-- Three.js from CDN using ES module importmap -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+        }
+    }
+    </script>
 
-        const statusElement = document.getElementById("status");
-        const playerIdElement = document.getElementById("player-id");
-        const playerNameElement = document.getElementById("player-name");
-        const dimensionElement = document.getElementById("dimension");
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-        const dimensionInput = document.getElementById("dimension-input");
-        const changeDimensionButton = document.getElementById("change-dimension");
+        // ================================================================
+        // STEP 1: CHECK AUTH — show login or game screen
+        // ================================================================
 
-        const playersElement = document.getElementById("players");
-        const playerCountElement = document.getElementById("player-count");
+        const loginScreen = document.getElementById('login-screen');
+        const gameScreen  = document.getElementById('game-screen');
 
-        const pingButton = document.getElementById("ping-button");
-        const outputElement = document.getElementById("output");
-        const logElement = document.getElementById("log");
+        let currentUser = null;
 
-        const chatMessagesElement = document.getElementById("chat-messages");
-        const chatForm = document.getElementById("chat-form");
-        const chatInput = document.getElementById("chat-input");
-        const chatSendButton = document.getElementById("chat-send");
+        const meRes  = await fetch('/api/me');
+        const meData = await meRes.json();
 
-        const gameWorld = document.getElementById("game-world");
+        if (!meData.loggedIn) {
+            // Not logged in — the login screen is already visible.
+        } else {
+            // Logged in — hide login, show game.
+            currentUser = meData.user;
+            loginScreen.style.display = 'none';
+            gameScreen.style.display  = 'block';
 
-        // --------------------------------------------------
-        // CLIENT STATE
-        // --------------------------------------------------
+            // Set HUD name
+            document.getElementById('hud-name').textContent = currentUser.displayName;
 
-        const state = {
-            playerId: null,
-            playerName: null,
-            dimensionId: null,
-            // Remote players: id -> { id, name, dimensionId, position: {x,y}, targetPosition: {x,y} }
-            players: new Map(),
-            // Local displayed position (with client-side prediction)
-            position: {
-                x: 200,
-                y: 200
-            },
-            // Authoritative position reported by server snapshot
-            serverPosition: {
-                x: 200,
-                y: 200
-            },
-            // Centralized world configuration (synced from server welcome payload)
-            world: {
-                width: 800,
-                height: 400,
-                playerRadius: 12,
-                moveSpeed: 180
-            }
-        };
-
-        const characterElements = new Map();
-        const movementKeys = new Set();
-        let lastSentInput = { x: 0, y: 0 };
-
-        // --------------------------------------------------
-        // INPUT HANDLING
-        // --------------------------------------------------
-
-        function isTyping(target) {
-            if (!target) return false;
-            const tagName = target.tagName ? target.tagName.toUpperCase() : "";
-            return tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable;
+            startGame(currentUser);
         }
 
-        function calculateDirectionalInput() {
-            let dx = 0;
-            let dy = 0;
+        // ================================================================
+        // STEP 2: THE GAME
+        // ================================================================
 
-            if (movementKeys.has("w") || movementKeys.has("arrowup")) dy -= 1;
-            if (movementKeys.has("s") || movementKeys.has("arrowdown")) dy += 1;
-            if (movementKeys.has("a") || movementKeys.has("arrowleft")) dx -= 1;
-            if (movementKeys.has("d") || movementKeys.has("arrowright")) dx += 1;
+        function startGame(user) {
 
-            return { x: dx, y: dy };
-        }
+            // ---- THREE.JS SCENE SETUP ----
 
-        function sendMovementInputIfChanged() {
-            if (!socket.connected || !state.playerId) {
-                return;
+            const canvas   = document.getElementById('game-canvas');
+            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+
+            const scene  = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb); // sky blue
+            scene.fog        = new THREE.Fog(0x87ceeb, 30, 60);
+
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            // Start camera at player's last position from DB.
+            camera.position.set(user.position.x, user.position.y, user.position.z);
+
+            // ---- LIGHTING ----
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+            sun.position.set(10, 20, 10);
+            sun.castShadow = true;
+            sun.shadow.mapSize.width  = 1024;
+            sun.shadow.mapSize.height = 1024;
+            scene.add(sun);
+
+            // ---- POINTER LOCK CONTROLS (first-person mouse look) ----
+
+            const controls      = new PointerLockControls(camera, document.body);
+            const clickToPlay   = document.getElementById('click-to-play');
+            const crosshair     = document.getElementById('crosshair');
+
+            gameScreen.addEventListener('click', () => {
+                // Don't lock if the user is typing in chat.
+                if (document.activeElement === document.getElementById('chat-input')) return;
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', () => {
+                clickToPlay.style.display = 'none';
+                crosshair.style.display   = 'block';
+            });
+
+            controls.addEventListener('unlock', () => {
+                clickToPlay.style.display = 'block';
+                crosshair.style.display   = 'none';
+            });
+
+            // ================================================================
+            // BLOCK MANAGEMENT (CLIENT SIDE)
+            // ================================================================
+
+            // Block colors by type.
+            const BLOCK_COLORS = {
+                dirt:  0x8B6914,
+                grass: 0x4a7c59,
+                stone: 0x888888,
+                wood:  0x8B4513,
+                sand:  0xc2b280,
+            };
+
+            // Map "x,y,z" -> THREE.Mesh
+            const blockMeshes = new Map();
+
+            // Shared geometry for all blocks (1x1x1 cube).
+            const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+            // We create a unique material per color (5 total — small, fine).
+            const blockMaterials = {};
+            for (const [type, color] of Object.entries(BLOCK_COLORS)) {
+                blockMaterials[type] = new THREE.MeshLambertMaterial({ color });
             }
 
-            const currentInput = calculateDirectionalInput();
-            if (currentInput.x !== lastSentInput.x || currentInput.y !== lastSentInput.y) {
-                lastSentInput = currentInput;
-                socket.emit("movement_input", currentInput);
-            }
-        }
-
-        function clearMovementInput() {
-            if (movementKeys.size > 0) {
-                movementKeys.clear();
-                sendMovementInputIfChanged();
-            }
-        }
-
-        gameWorld.addEventListener("pointerdown", () => {
-            gameWorld.focus();
-        });
-
-        const MOVEMENT_KEY_LIST = ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"];
-
-        window.addEventListener("keydown", (event) => {
-            if (isTyping(event.target)) {
-                return;
+            function blockKey(x, y, z) {
+                return `${x},${y},${z}`;
             }
 
-            const key = event.key.toLowerCase();
-            if (MOVEMENT_KEY_LIST.includes(key)) {
-                event.preventDefault();
-                movementKeys.add(key);
-                sendMovementInputIfChanged();
-            }
-        });
+            function addBlock(x, y, z, type) {
+                const k = blockKey(x, y, z);
+                if (blockMeshes.has(k)) return; // already rendered
 
-        window.addEventListener("keyup", (event) => {
-            const key = event.key.toLowerCase();
-            if (movementKeys.has(key)) {
-                movementKeys.delete(key);
-                sendMovementInputIfChanged();
-            }
-        });
-
-        window.addEventListener("blur", clearMovementInput);
-
-        document.addEventListener("visibilitychange", () => {
-            if (document.hidden) {
-                clearMovementInput();
-            }
-        });
-
-        // --------------------------------------------------
-        // MOVEMENT SIMULATION, PREDICTION & INTERPOLATION
-        // --------------------------------------------------
-
-        let previousFrameTime = performance.now();
-
-        function updateMovement(currentTime) {
-            const deltaTime = Math.min(
-                (currentTime - previousFrameTime) / 1000,
-                0.1
-            );
-            previousFrameTime = currentTime;
-
-            // 1. Local Player Prediction
-            const input = calculateDirectionalInput();
-            let dx = input.x;
-            let dy = input.y;
-            const isMoving = dx !== 0 || dy !== 0;
-
-            if (isMoving) {
-                const mag = Math.hypot(dx, dy);
-                if (mag > 1) {
-                    dx /= mag;
-                    dy /= mag;
-                }
-
-                state.position.x += dx * state.world.moveSpeed * deltaTime;
-                state.position.y += dy * state.world.moveSpeed * deltaTime;
-
-                // Clamp to world boundaries
-                const minX = state.world.playerRadius;
-                const maxX = state.world.width - state.world.playerRadius;
-                const minY = state.world.playerRadius;
-                const maxY = state.world.height - state.world.playerRadius;
-
-                state.position.x = Math.max(minX, Math.min(maxX, state.position.x));
-                state.position.y = Math.max(minY, Math.min(maxY, state.position.y));
+                const mat  = blockMaterials[type] || blockMaterials.dirt;
+                const mesh = new THREE.Mesh(blockGeometry, mat);
+                mesh.position.set(x, y, z);
+                mesh.castShadow    = true;
+                mesh.receiveShadow = true;
+                // Store coordinates on the mesh so the raycaster can read them.
+                mesh.userData = { x, y, z, type };
+                scene.add(mesh);
+                blockMeshes.set(k, mesh);
             }
 
-            // 2. Local Player Server Reconciliation
-            if (state.serverPosition) {
-                const errX = state.serverPosition.x - state.position.x;
-                const errY = state.serverPosition.y - state.position.y;
-                const errorDist = Math.hypot(errX, errY);
-
-                if (errorDist > 60) {
-                    // Snap on massive drift, boundary collision, or teleport
-                    state.position.x = state.serverPosition.x;
-                    state.position.y = state.serverPosition.y;
-                } else if (!isMoving && errorDist > 0.2) {
-                    // Smoothly settle to server position when stationary
-                    const settleFactor = Math.min(1, 15 * deltaTime);
-                    state.position.x += errX * settleFactor;
-                    state.position.y += errY * settleFactor;
-                } else if (isMoving && errorDist > 5) {
-                    // Gentle correction pull during active movement
-                    const pullFactor = Math.min(1, 4 * deltaTime);
-                    state.position.x += errX * pullFactor;
-                    state.position.y += errY * pullFactor;
+            function deleteBlock(x, y, z) {
+                const k = blockKey(x, y, z);
+                const mesh = blockMeshes.get(k);
+                if (mesh) {
+                    scene.remove(mesh);
+                    blockMeshes.delete(k);
                 }
             }
 
-            // 3. Render Local Player
-            if (state.playerId) {
-                renderCharacter({
-                    id: state.playerId,
-                    name: state.playerName,
-                    position: state.position
+            // ================================================================
+            // REMOTE PLAYER MESHES
+            // ================================================================
+
+            // Map: socketId -> THREE.Mesh (a colored box to represent other players)
+            const remotePlayers = new Map();
+
+            const remoteGeometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
+            const remoteMaterial = new THREE.MeshLambertMaterial({ color: 0xff6b35 });
+
+            function addRemotePlayer(playerData) {
+                if (remotePlayers.has(playerData.id)) return;
+                const mesh = new THREE.Mesh(remoteGeometry, remoteMaterial);
+                mesh.position.set(
+                    playerData.position.x,
+                    playerData.position.y - 0.9, // anchor feet to ground
+                    playerData.position.z
+                );
+                scene.add(mesh);
+                remotePlayers.set(playerData.id, {
+                    mesh,
+                    targetPos: { ...playerData.position },
+                    name: playerData.name
                 });
             }
 
-            // 4. Remote Players Smooth Interpolation
-            for (const remotePlayer of state.players.values()) {
-                if (!remotePlayer.targetPosition) {
-                    continue;
-                }
-
-                const rdx = remotePlayer.targetPosition.x - remotePlayer.position.x;
-                const rdy = remotePlayer.targetPosition.y - remotePlayer.position.y;
-                const dist = Math.hypot(rdx, rdy);
-
-                if (dist > 150) {
-                    // Snap immediate warps or spawns
-                    remotePlayer.position.x = remotePlayer.targetPosition.x;
-                    remotePlayer.position.y = remotePlayer.targetPosition.y;
-                } else if (dist > 0.1) {
-                    // Smooth exponential interpolation
-                    const lerpFactor = Math.min(1, 1 - Math.exp(-15 * deltaTime));
-                    remotePlayer.position.x += rdx * lerpFactor;
-                    remotePlayer.position.y += rdy * lerpFactor;
-                } else {
-                    remotePlayer.position.x = remotePlayer.targetPosition.x;
-                    remotePlayer.position.y = remotePlayer.targetPosition.y;
-                }
-
-                renderCharacter(remotePlayer);
-            }
-
-            requestAnimationFrame(updateMovement);
-        }
-
-        requestAnimationFrame(updateMovement);
-
-        // --------------------------------------------------
-        // LOGGING & RENDERING HELPERS
-        // --------------------------------------------------
-
-        function log(message) {
-            const timestamp = new Date().toLocaleTimeString();
-            logElement.textContent += `[${timestamp}] ${message}\n`;
-            logElement.scrollTop = logElement.scrollHeight;
-        }
-
-        function renderCharacter(player) {
-            let character = characterElements.get(player.id);
-
-            if (!character) {
-                character = document.createElement("div");
-                character.className = "player-character";
-
-                const label = document.createElement("span");
-                label.className = "player-label";
-                label.textContent = player.name;
-
-                character.appendChild(label);
-                gameWorld.appendChild(character);
-
-                characterElements.set(player.id, character);
-            }
-
-            character.style.left = `${player.position.x}px`;
-            character.style.top = `${player.position.y}px`;
-
-            character.classList.toggle(
-                "self",
-                player.id === state.playerId
-            );
-        }
-
-        function removeCharacter(playerId) {
-            const character = characterElements.get(playerId);
-            if (character) {
-                character.remove();
-                characterElements.delete(playerId);
-            }
-        }
-
-        function renderPlayers() {
-            playersElement.replaceChildren();
-
-            const allPlayers = [
-                {
-                    id: state.playerId,
-                    name: state.playerName,
-                    dimensionId: state.dimensionId
-                },
-                ...state.players.values()
-            ];
-
-            playerCountElement.textContent = allPlayers.length;
-
-            for (const player of allPlayers) {
-                if (!player.id) continue;
-                const element = document.createElement("div");
-                element.className = "player";
-                const isSelf = player.id === state.playerId;
-                element.textContent = `${player.name}${isSelf ? " (You)" : ""}`;
-                playersElement.appendChild(element);
-            }
-        }
-
-        function updateDimension(dimensionId) {
-            state.dimensionId = dimensionId;
-            dimensionElement.textContent = dimensionId;
-            dimensionInput.value = dimensionId;
-            renderPlayers();
-        }
-
-        function syncDimensionState(dimensionId, playerList, isDimensionChange = false) {
-            state.players.clear();
-
-            // Clear remote characters
-            for (const id of characterElements.keys()) {
-                if (id !== state.playerId) {
-                    removeCharacter(id);
+            function removeRemotePlayer(socketId) {
+                const data = remotePlayers.get(socketId);
+                if (data) {
+                    scene.remove(data.mesh);
+                    remotePlayers.delete(socketId);
                 }
             }
 
-            for (const player of playerList) {
-                state.players.set(player.id, {
-                    id: player.id,
-                    name: player.name,
-                    dimensionId: player.dimensionId,
-                    position: { x: player.position.x, y: player.position.y },
-                    targetPosition: { x: player.position.x, y: player.position.y }
-                });
-            }
+            // ================================================================
+            // SOCKET.IO
+            // ================================================================
 
-            if (isDimensionChange) {
-                clearMovementInput();
-            }
+            const socket = io();
 
-            renderPlayers();
-            updateDimension(dimensionId);
-        }
+            let mySocketId = null;
 
-        // --------------------------------------------------
-        // SOCKET EVENT LISTENERS
-        // --------------------------------------------------
+            // --- Welcome ---
+            socket.on('welcome', (data) => {
+                mySocketId = socket.id;
+                // Snap camera to server-authoritative position.
+                camera.position.set(
+                    data.player.position.x,
+                    data.player.position.y,
+                    data.player.position.z
+                );
+                console.log('Welcome!', data.player.name, 'at', data.player.position);
+                updateHudPlayers();
+            });
 
-        socket.on("connect", () => {
-            statusElement.textContent = "Connected";
+            // --- Initial world blocks ---
+            socket.on('world_state', (data) => {
+                for (const b of data.blocks) {
+                    addBlock(b.x, b.y, b.z, b.type);
+                }
+                console.log(`Loaded ${data.blocks.length} blocks.`);
+            });
 
-            pingButton.disabled = false;
-            changeDimensionButton.disabled = false;
-            chatSendButton.disabled = false;
+            // --- Other players already in world ---
+            socket.on('players_state', (data) => {
+                for (const p of data.players) {
+                    addRemotePlayer(p);
+                }
+                updateHudPlayers();
+            });
 
-            log("Connected to Somewhere.");
-        });
+            // --- Someone joins ---
+            socket.on('player_joined', (player) => {
+                addRemotePlayer(player);
+                addChatMessage(`${player.name} joined the world.`, 'system');
+                updateHudPlayers();
+            });
 
-        socket.on("welcome", (data) => {
-            state.playerId = data.player.id;
-            state.playerName = data.player.name;
-            state.position.x = data.player.position.x;
-            state.position.y = data.player.position.y;
-            state.serverPosition.x = data.player.position.x;
-            state.serverPosition.y = data.player.position.y;
+            // --- Someone leaves ---
+            socket.on('player_left', (data) => {
+                removeRemotePlayer(data.playerId);
+                addChatMessage(`${data.name} left the world.`, 'system');
+                updateHudPlayers();
+            });
 
-            if (data.world) {
-                state.world = Object.assign(state.world, data.world);
-            }
-
-            playerIdElement.textContent = state.playerId;
-            playerNameElement.textContent = state.playerName;
-
-            updateDimension(data.player.dimensionId);
-
-            // Establish stationary input state on connect
-            lastSentInput = { x: 0, y: 0 };
-            socket.emit("movement_input", { x: 0, y: 0 });
-
-            log(`Welcome, ${state.playerName}! Authoritative position: (${data.player.position.x}, ${data.player.position.y})`);
-        });
-
-        // Periodic server snapshots (15-20 Hz)
-        socket.on("movement_snapshot", (data) => {
-            if (!data || !Array.isArray(data.players)) {
-                return;
-            }
-
-            for (const update of data.players) {
-                if (update.id === state.playerId) {
-                    state.serverPosition.x = update.position.x;
-                    state.serverPosition.y = update.position.y;
-                } else {
-                    const remote = state.players.get(update.id);
-                    if (remote) {
-                        remote.targetPosition.x = update.position.x;
-                        remote.targetPosition.y = update.position.y;
+            // --- Movement snapshots (20 per second) ---
+            socket.on('movement_snapshot', (data) => {
+                for (const update of data.players) {
+                    if (update.id === mySocketId) {
+                        // Reconcile server position with our local prediction.
+                        serverPos.x = update.position.x;
+                        serverPos.y = update.position.y;
+                        serverPos.z = update.position.z;
+                    } else {
+                        const remote = remotePlayers.get(update.id);
+                        if (remote) {
+                            remote.targetPos.x = update.position.x;
+                            remote.targetPos.y = update.position.y - 0.9;
+                            remote.targetPos.z = update.position.z;
+                        }
                     }
                 }
-            }
-        });
-
-        socket.on("disconnect", (reason) => {
-            statusElement.textContent = "Disconnected";
-
-            pingButton.disabled = true;
-            changeDimensionButton.disabled = true;
-            chatSendButton.disabled = true;
-
-            clearMovementInput();
-
-            log(`Disconnected: ${reason}`);
-        });
-
-        socket.on("connect_error", (error) => {
-            statusElement.textContent = `Connection error: ${error.message}`;
-            log(`Connection error: ${error.message}`);
-        });
-
-        // --------------------------------------------------
-        // DIMENSION EVENTS
-        // --------------------------------------------------
-
-        socket.on("dimension_state", (data) => {
-            syncDimensionState(data.dimensionId, data.players, false);
-
-            log(
-                `Initial dimension state received: ${data.dimensionId}. ` +
-                `${data.players.length} other player(s).`
-            );
-        });
-
-        socket.on("dimension_changed", (data) => {
-            syncDimensionState(data.dimensionId, data.players, true);
-
-            log(
-                `Entered dimension: ${data.dimensionId}. ` +
-                `${data.players.length} other player(s) present.`
-            );
-        });
-
-        socket.on("player_joined", (player) => {
-            state.players.set(player.id, {
-                id: player.id,
-                name: player.name,
-                dimensionId: player.dimensionId,
-                position: { x: player.position.x, y: player.position.y },
-                targetPosition: { x: player.position.x, y: player.position.y }
             });
 
-            renderPlayers();
-            renderCharacter(player);
+            // --- Block events ---
+            socket.on('block:placed', (data) => {
+                addBlock(data.x, data.y, data.z, data.type);
+            });
 
-            log(`${player.name} joined ${player.dimensionId}.`);
-        });
+            socket.on('block:removed', (data) => {
+                deleteBlock(data.x, data.y, data.z);
+            });
 
-        socket.on("player_left", (data) => {
-            state.players.delete(data.playerId);
-            removeCharacter(data.playerId);
-            renderPlayers();
+            // --- Rejected actions ---
+            socket.on('request_rejected', (data) => {
+                console.warn(`[Rejected] ${data.action}: ${data.reason}`);
+            });
 
-            log(
-                `${data.name} left ${data.dimensionId}. ` +
-                `Reason: ${data.reason}.`
-            );
-        });
+            // --- Chat ---
+            socket.on('chat:message', (data) => {
+                const isSelf = (data.playerId === mySocketId);
+                const sender = isSelf ? 'You' : data.playerName;
+                addChatMessage(`${sender}: ${data.message}`, isSelf ? 'self' : 'other');
+            });
 
-        changeDimensionButton.addEventListener("click", () => {
-            const dimensionId = dimensionInput.value.trim();
+            // ================================================================
+            // MOVEMENT INPUT
+            // ================================================================
 
-            if (!dimensionId) {
-                log("Enter a dimension ID first.");
-                return;
+            const keys = { w: false, a: false, s: false, d: false };
+            let   lastSentInput = { forward: 0, strafe: 0, yaw: 0 };
+
+            // The server-authoritative position for reconciliation.
+            const serverPos = {
+                x: user.position.x,
+                y: user.position.y,
+                z: user.position.z,
+            };
+
+            function isChatFocused() {
+                return document.activeElement === document.getElementById('chat-input');
             }
 
-            log(`Requesting entry into ${dimensionId}...`);
-
-            socket.emit("change_dimension", {
-                dimensionId: dimensionId
+            window.addEventListener('keydown', (e) => {
+                if (isChatFocused()) return;
+                const k = e.key.toLowerCase();
+                if (k in keys) { keys[k] = true; e.preventDefault(); }
             });
-        });
 
-        // --------------------------------------------------
-        // TEST MESSAGES & REJECTIONS
-        // --------------------------------------------------
-
-        pingButton.addEventListener("click", () => {
-            socket.emit("ping_server", {
-                message: "Hello from the browser!",
-                timestamp: Date.now()
+            window.addEventListener('keyup', (e) => {
+                const k = e.key.toLowerCase();
+                if (k in keys) keys[k] = false;
             });
-        });
 
-        socket.on("pong_server", (data) => {
-            outputElement.textContent +=
-                `${data.message}\n` +
-                `${JSON.stringify(data.received, null, 2)}\n\n`;
+            function sendMovementInput() {
+                if (!socket.connected) return;
 
-            log("Received pong_server response.");
-        });
+                const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+                const strafe  = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+                const yaw     = controls.getObject().rotation.y; // camera horizontal angle
 
-        socket.on("request_rejected", (data) => {
-            log(`[Server Rejected] ${data.action}: ${data.reason}`);
-        });
-
-        // --------------------------------------------------
-        // DIMENSION CHAT
-        // --------------------------------------------------
-
-        chatForm.addEventListener("submit", (event) => {
-            event.preventDefault();
-
-            const message = chatInput.value.trim();
-
-            if (!message || !socket.connected) {
-                return;
+                // Only send if something changed (don't spam the server).
+                if (
+                    forward !== lastSentInput.forward ||
+                    strafe  !== lastSentInput.strafe  ||
+                    Math.abs(yaw - lastSentInput.yaw) > 0.01
+                ) {
+                    lastSentInput = { forward, strafe, yaw };
+                    socket.emit('movement_input', { forward, strafe, yaw });
+                }
             }
 
-            socket.emit("chat_message", {
-                message: message
+            // Send movement input every 50ms (20 times per second).
+            setInterval(sendMovementInput, 50);
+
+            // ================================================================
+            // BLOCK INTERACTION (RAYCASTING)
+            // ================================================================
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.far   = 6; // Can only reach blocks within 6 units.
+
+            let selectedBlockType = 'dirt';
+
+            // Block type selector buttons.
+            document.querySelectorAll('.block-btn').forEach((btn) => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.block-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    selectedBlockType = btn.dataset.type;
+                });
             });
 
-            chatInput.value = "";
-            chatInput.focus();
-        });
+            // Cast a ray from camera center and find the closest block.
+            function getTargetBlock() {
+                // Ray from center of screen.
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
-        socket.on("chat_message", (data) => {
-            const messageElement = document.createElement("div");
-            const time = new Date(data.timestamp).toLocaleTimeString();
-            const isSelf = data.playerId === state.playerId;
-            const sender = isSelf ? "You" : data.playerName;
+                const meshArray = Array.from(blockMeshes.values());
+                const intersects = raycaster.intersectObjects(meshArray);
 
-            messageElement.textContent = `[${time}] ${sender}: ${data.message}`;
-            chatMessagesElement.appendChild(messageElement);
-            chatMessagesElement.scrollTop = chatMessagesElement.scrollHeight;
-        });
+                if (intersects.length === 0) return null;
+
+                return intersects[0]; // closest hit
+            }
+
+            // Left-click: remove the block you're looking at.
+            document.addEventListener('mousedown', (e) => {
+                if (!controls.isLocked) return;
+                if (e.button !== 0) return; // only left button
+
+                const hit = getTargetBlock();
+                if (!hit) return;
+
+                const { x, y, z } = hit.object.userData;
+                socket.emit('block:remove', { x, y, z });
+                // Optimistic local removal (server confirms/corrects).
+                deleteBlock(x, y, z);
+            });
+
+            // Right-click: place a block adjacent to the face you're looking at.
+            document.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if (!controls.isLocked) return;
+
+                const hit = getTargetBlock();
+                if (!hit) return;
+
+                // The face normal tells us WHICH face we're pointing at.
+                // We place the new block one step in that direction.
+                const normal = hit.face.normal.clone();
+                normal.transformDirection(hit.object.matrixWorld); // world space normal
+
+                const { x, y, z } = hit.object.userData;
+                const nx = Math.round(x + normal.x);
+                const ny = Math.round(y + normal.y);
+                const nz = Math.round(z + normal.z);
+
+                // Don't place a block inside the player.
+                const camPos = camera.position;
+                if (Math.abs(camPos.x - nx) < 0.6 &&
+                    Math.abs(camPos.y - ny) < 1.2 &&
+                    Math.abs(camPos.z - nz) < 0.6) {
+                    return;
+                }
+
+                socket.emit('block:place', { x: nx, y: ny, z: nz, type: selectedBlockType });
+                // Optimistic local add.
+                addBlock(nx, ny, nz, selectedBlockType);
+            });
+
+            // ================================================================
+            // RENDER LOOP
+            // ================================================================
+
+            const clock = new THREE.Clock();
+
+            // Local position prediction (what we display while waiting for server).
+            const localPos = {
+                x: user.position.x,
+                y: user.position.y,
+                z: user.position.z,
+            };
+
+            function animate() {
+                requestAnimationFrame(animate);
+
+                const dt = clock.getDelta();
+
+                // --- LOCAL PREDICTION ---
+                // We predict movement locally so the game feels instant.
+                // The server position is used to correct drift.
+                if (controls.isLocked) {
+                    const speed = 8;
+                    const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+                    const strafe  = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+
+                    if (forward !== 0 || strafe !== 0) {
+                        const yaw    = controls.getObject().rotation.y;
+                        const sinYaw = Math.sin(yaw);
+                        const cosYaw = Math.cos(yaw);
+
+                        let dx = sinYaw * forward + cosYaw * strafe;
+                        let dz = cosYaw * forward - sinYaw * strafe;
+
+                        const mag = Math.hypot(dx, dz);
+                        if (mag > 1) { dx /= mag; dz /= mag; }
+
+                        localPos.x += dx * speed * dt;
+                        localPos.z += dz * speed * dt;
+
+                        // Clamp to world bounds.
+                        localPos.x = Math.max(-30, Math.min(30, localPos.x));
+                        localPos.z = Math.max(-30, Math.min(30, localPos.z));
+                    }
+
+                    // Server reconciliation: smoothly correct toward server position.
+                    const errX = serverPos.x - localPos.x;
+                    const errZ = serverPos.z - localPos.z;
+                    const dist = Math.hypot(errX, errZ);
+                    if (dist > 10) {
+                        // Big drift → snap.
+                        localPos.x = serverPos.x;
+                        localPos.z = serverPos.z;
+                    } else if (dist > 0.1) {
+                        // Small drift → gently pull.
+                        localPos.x += errX * Math.min(1, 5 * dt);
+                        localPos.z += errZ * Math.min(1, 5 * dt);
+                    }
+
+                    // Apply to camera.
+                    camera.position.set(localPos.x, localPos.y, localPos.z);
+                }
+
+                // --- INTERPOLATE REMOTE PLAYERS ---
+                for (const [, remote] of remotePlayers) {
+                    const rdx = remote.targetPos.x - remote.mesh.position.x;
+                    const rdy = remote.targetPos.y - remote.mesh.position.y;
+                    const rdz = remote.targetPos.z - remote.mesh.position.z;
+                    const dist = Math.hypot(rdx, rdy, rdz);
+
+                    if (dist > 10) {
+                        // Snap on huge jumps.
+                        remote.mesh.position.set(remote.targetPos.x, remote.targetPos.y, remote.targetPos.z);
+                    } else if (dist > 0.01) {
+                        const lerp = Math.min(1, 1 - Math.exp(-10 * dt));
+                        remote.mesh.position.x += rdx * lerp;
+                        remote.mesh.position.y += rdy * lerp;
+                        remote.mesh.position.z += rdz * lerp;
+                    }
+                }
+
+                // --- UPDATE HUD COORDS ---
+                const p = camera.position;
+                document.getElementById('hud-coords').textContent =
+                    `x: ${p.x.toFixed(1)} | y: ${p.y.toFixed(1)} | z: ${p.z.toFixed(1)}`;
+
+                renderer.render(scene, camera);
+            }
+
+            animate();
+
+            // ================================================================
+            // CHAT
+            // ================================================================
+
+            const chatMessages = document.getElementById('chat-messages');
+            const chatForm     = document.getElementById('chat-form');
+            const chatInput    = document.getElementById('chat-input');
+
+            function addChatMessage(text, cssClass = 'other') {
+                const div = document.createElement('div');
+                div.textContent = text;
+                if (cssClass !== 'other') div.classList.add(cssClass);
+                chatMessages.appendChild(div);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            chatForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const msg = chatInput.value.trim();
+                if (!msg || !socket.connected) return;
+                socket.emit('chat:message', { message: msg });
+                chatInput.value = '';
+                chatInput.blur();
+                controls.lock(); // re-lock after chatting
+            });
+
+            // Press Enter to focus chat.
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && controls.isLocked) {
+                    controls.unlock();
+                    chatInput.focus();
+                }
+            });
+
+            // ================================================================
+            // UTILITY
+            // ================================================================
+
+            function updateHudPlayers() {
+                const total = remotePlayers.size + 1; // +1 for self
+                document.getElementById('hud-players').textContent = `Players: ${total}`;
+            }
+
+            // Handle window resize.
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+        } // end startGame()
     </script>
 
 </body>
-
 </html>

@@ -1,9 +1,19 @@
-const express = require("express");
-const http = require("http");
-const path = require("path");
-const { Server } = require("socket.io");
+// server.js — Main entry point.
+//
+// Responsibilities:
+//   - Express HTTP server (static files + auth routes + API routes)
+//   - Socket.IO real-time server (movement, blocks, chat)
+//   - Ties together: auth.js, simulation.js, worldState.js, db.js
+
 require("dotenv").config();
 
+const express    = require("express");
+const http       = require("http");
+const path       = require("path");
+const passport   = require("passport");
+const { Server } = require("socket.io");
+
+const { createSessionMiddleware, mountAuthRoutes } = require("./auth");
 const {
     WORLD_CONFIG,
     createPlayer,
@@ -11,323 +21,285 @@ const {
     setPlayerMovementInput,
     resetPlayerMovementInput,
     simulateTick,
-    createDimensionSnapshots
+    createSnapshot,
 } = require("./simulation");
+const world = require("./worldState");
+const prisma = require("./db");
 
-const app = express();
+const app        = express();
 const httpServer = http.createServer(app);
-
-const io = new Server(httpServer);
-
-const PORT = process.env.PORT || 3000;
+const io         = new Server(httpServer);
+const PORT       = process.env.PORT || 3000;
 
 // --------------------------------------------------
-// HTTP
+// MIDDLEWARE
 // --------------------------------------------------
 
 app.use(express.json());
 
+// Session middleware (must come before passport).
+const sessionMiddleware = createSessionMiddleware();
+app.use(sessionMiddleware);
+
+// Passport authentication.
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Serve static files from /public (the Three.js frontend).
 app.use(express.static(path.join(__dirname, "../public")));
 
+// --------------------------------------------------
+// AUTH ROUTES  (/auth/google, /auth/logout, /api/me)
+// --------------------------------------------------
+
+mountAuthRoutes(app);
+
+// Health check
 app.get("/health", (req, res) => {
-    res.json({
-        status: "ok",
-        name: "Somewhere"
-    });
+    res.json({ status: "ok", name: "Somewhere" });
 });
 
 // --------------------------------------------------
-// WORLD STATE
+// SHARE SESSION WITH SOCKET.IO
+// --------------------------------------------------
+// This lets Socket.IO handlers read req.session and req.user,
+// so we can verify who the connected player is.
+
+const wrap = (middleware) => (socket, next) =>
+    middleware(socket.request, socket.request.res || {}, next);
+
+io.use(wrap(sessionMiddleware));
+io.use(wrap(passport.initialize()));
+io.use(wrap(passport.session()));
+
+// Gate: reject socket connections from unauthenticated users.
+io.use((socket, next) => {
+    if (socket.request.user) {
+        return next();
+    }
+    next(new Error("Not authenticated"));
+});
+
+// --------------------------------------------------
+// IN-MEMORY PLAYER STATE
 // --------------------------------------------------
 
+// Map: socketId -> player object
 const players = new Map();
 
-const DEFAULT_DIMENSION = "main";
-
-function getDimensionRoom(dimensionId) {
-    return `dimension:${dimensionId}`;
-}
-
-function getPlayersInDimension(dimensionId, excludedPlayerId = null) {
-    return Array.from(players.values())
-        .filter(player =>
-            player.dimensionId === dimensionId &&
-            player.id !== excludedPlayerId
-        )
-        .map(getPublicPlayerState);
-}
-
 // --------------------------------------------------
-// DIMENSION VALIDATION
+// SIMULATION + BROADCAST LOOPS
 // --------------------------------------------------
 
-function isValidDimensionId(dimensionId) {
-    return (
-        typeof dimensionId === "string" &&
-        /^[a-zA-Z0-9_-]{1,40}$/.test(dimensionId)
-    );
-}
+let lastSimTime = performance.now();
 
-// --------------------------------------------------
-// SIMULATION & BROADCAST LOOPS
-// --------------------------------------------------
-
-// 1. Simulation loop: 30 ticks per second
-let lastSimulationTime = performance.now();
 const simulationInterval = setInterval(() => {
     const now = performance.now();
-    const deltaTime = (now - lastSimulationTime) / 1000;
-    lastSimulationTime = now;
+    const dt  = (now - lastSimTime) / 1000;
+    lastSimTime = now;
 
     if (players.size > 0) {
-        simulateTick(players.values(), deltaTime);
+        simulateTick(players.values(), dt);
     }
 }, 1000 / WORLD_CONFIG.simulationTickRate);
 
-// 2. Broadcast loop: 20 snapshots per second
 const snapshotInterval = setInterval(() => {
-    if (players.size === 0) {
-        return;
-    }
-
-    const dimensionSnapshots = createDimensionSnapshots(players.values());
-    for (const { dimensionId, snapshot } of dimensionSnapshots) {
-        io.to(getDimensionRoom(dimensionId)).emit("movement_snapshot", snapshot);
-    }
+    if (players.size === 0) return;
+    // Broadcast the positions of ALL players to everyone.
+    io.emit("movement_snapshot", createSnapshot(players.values()));
 }, 1000 / WORLD_CONFIG.snapshotRate);
 
 // --------------------------------------------------
-// SOCKET CONNECTIONS
+// SOCKET.IO EVENT HANDLERS
 // --------------------------------------------------
 
-io.on("connection", (socket) => {
-    const player = createPlayer(socket.id, `Player-${socket.id.slice(0, 6)}`, DEFAULT_DIMENSION);
+io.on("connection", async (socket) => {
+    // The authenticated user is on socket.request.user (set by Passport).
+    const dbUser = socket.request.user;
 
-    players.set(player.id, player);
+    // Create the in-memory player using saved DB position.
+    const player = createPlayer(socket.id, dbUser.displayName, {
+        x: dbUser.posX,
+        y: dbUser.posY,
+        z: dbUser.posZ,
+    });
+    player.userId = dbUser.id;
 
-    const initialRoom = getDimensionRoom(player.dimensionId);
+    players.set(socket.id, player);
 
-    // Join the default dimension room.
-    socket.join(initialRoom);
+    console.log(`${player.name} connected (userId: ${dbUser.id})`);
 
-    console.log(
-        `${player.name} connected to dimension: ${player.dimensionId}`
-    );
-
-    // Tell this client who they are, their authoritative initial position, and world config.
+    // 1. Tell this client who they are + world config.
     socket.emit("welcome", {
         player: getPublicPlayerState(player),
-        world: WORLD_CONFIG
+        world: WORLD_CONFIG,
     });
 
-    // Give this client the existing players in its dimension.
-    socket.emit("dimension_state", {
-        dimensionId: player.dimensionId,
-        players: getPlayersInDimension(
-            player.dimensionId,
-            player.id
-        )
-    });
+    // 2. Send the full block world to this new client.
+    socket.emit("world_state", { blocks: world.getAllBlocks() });
 
-    // Tell other players in this dimension about the new arrival.
-    socket.to(initialRoom).emit(
-        "player_joined",
-        getPublicPlayerState(player)
-    );
-
-    // --------------------------------------------------
-    // CHANGE DIMENSION
-    // --------------------------------------------------
-
-    socket.on("change_dimension", (data) => {
-        if (!data || !isValidDimensionId(data.dimensionId)) {
-            socket.emit("request_rejected", {
-                action: "change_dimension",
-                reason: "Invalid dimension ID."
-            });
-
-            return;
+    // 3. Send the list of other players currently connected.
+    const otherPlayers = [];
+    for (const [id, p] of players) {
+        if (id !== socket.id) {
+            otherPlayers.push(getPublicPlayerState(p));
         }
+    }
+    socket.emit("players_state", { players: otherPlayers });
 
-        const targetDimensionId = data.dimensionId;
-        const oldDimensionId = player.dimensionId;
-
-        // Reset movement input on dimension transition.
-        resetPlayerMovementInput(player);
-
-        // Nothing to do if the player is already there.
-        if (targetDimensionId === oldDimensionId) {
-            socket.emit("dimension_changed", {
-                dimensionId: oldDimensionId,
-                players: getPlayersInDimension(
-                    oldDimensionId,
-                    player.id
-                )
-            });
-
-            return;
-        }
-
-        const oldRoom = getDimensionRoom(oldDimensionId);
-        const newRoom = getDimensionRoom(targetDimensionId);
-
-        // Notify the old dimension before removing the player.
-        socket.to(oldRoom).emit("player_left", {
-            playerId: player.id,
-            name: player.name,
-            dimensionId: oldDimensionId,
-            reason: "dimension_changed"
-        });
-
-        // Leave the old room.
-        socket.leave(oldRoom);
-
-        // Update authoritative server state.
-        player.dimensionId = targetDimensionId;
-
-        // Join the new room.
-        socket.join(newRoom);
-
-        console.log(
-            `${player.name} moved from ${oldDimensionId} to ${targetDimensionId}`
-        );
-
-        // Give the player the new dimension's current state.
-        socket.emit("dimension_changed", {
-            dimensionId: targetDimensionId,
-            players: getPlayersInDimension(
-                targetDimensionId,
-                player.id
-            )
-        });
-
-        // Notify existing players in the new dimension.
-        socket.to(newRoom).emit(
-            "player_joined",
-            getPublicPlayerState(player)
-        );
-    });
+    // 4. Tell all OTHER players that this person joined.
+    socket.broadcast.emit("player_joined", getPublicPlayerState(player));
 
     // --------------------------------------------------
-    // TEST MESSAGE
-    // --------------------------------------------------
-
-    socket.on("ping_server", (data) => {
-        console.log(`Message from ${player.name}:`, data);
-
-        socket.emit("pong_server", {
-            message: "Message received!",
-            received: data
-        });
-    });
-
-    // --------------------------------------------------
-    // DIMENSION CHAT
-    // --------------------------------------------------
-
-    socket.on("chat_message", (data) => {
-        // Validate the message payload.
-        if (!data || typeof data.message !== "string") {
-            socket.emit("request_rejected", {
-                action: "chat_message",
-                reason: "Invalid message."
-            });
-
-            return;
-        }
-
-        // Normalize and validate the message.
-        const message = data.message.trim();
-
-        if (message.length === 0) {
-            return;
-        }
-
-        if (message.length > 500) {
-            socket.emit("request_rejected", {
-                action: "chat_message",
-                reason: "Message cannot exceed 500 characters."
-            });
-
-            return;
-        }
-
-        // Construct the message using authoritative server state.
-        const chatMessage = {
-            playerId: player.id,
-            playerName: player.name,
-            dimensionId: player.dimensionId,
-            message: message,
-            timestamp: Date.now()
-        };
-
-        // Broadcast to everyone in this dimension, including the sender.
-        io.to(getDimensionRoom(player.dimensionId)).emit(
-            "chat_message",
-            chatMessage
-        );
-
-        console.log(
-            `[Chat: ${player.dimensionId}] ${player.name}: ${message}`
-        );
-    });
-
-    // --------------------------------------------------
-    // SERVER-AUTHORITATIVE MOVEMENT INPUT
+    // MOVEMENT INPUT
     // --------------------------------------------------
 
     socket.on("movement_input", (data) => {
-        const activePlayer = players.get(socket.id);
-        if (!activePlayer) {
-            return;
-        }
+        const p = players.get(socket.id);
+        if (!p) return;
 
-        const success = setPlayerMovementInput(activePlayer, data);
-        if (!success) {
+        const ok = setPlayerMovementInput(p, data);
+        if (!ok) {
             socket.emit("request_rejected", {
                 action: "movement_input",
-                reason: "Malformed or out-of-range directional input."
+                reason: "Invalid movement input.",
             });
         }
     });
 
-    // Explicitly reject any legacy or malicious direct position update attempts
-    socket.on("move", () => {
-        socket.emit("request_rejected", {
-            action: "move",
-            reason: "Client-authoritative position updates are rejected. Use movement_input."
-        });
+    // --------------------------------------------------
+    // BLOCK: PLACE
+    // --------------------------------------------------
+
+    socket.on("block:place", async (data) => {
+        if (!data) return;
+
+        const { x, y, z, type } = data;
+
+        // Validate on the server — never trust the client.
+        if (!world.isValidBlockCoord(x, y, z)) {
+            socket.emit("request_rejected", {
+                action: "block:place",
+                reason: "Invalid block coordinates.",
+            });
+            return;
+        }
+
+        const blockType = type || "dirt";
+        if (!world.isValidBlockType(blockType)) {
+            socket.emit("request_rejected", {
+                action: "block:place",
+                reason: "Invalid block type.",
+            });
+            return;
+        }
+
+        try {
+            const newBlock = await world.placeBlock(x, y, z, blockType);
+            if (!newBlock) {
+                socket.emit("request_rejected", {
+                    action: "block:place",
+                    reason: "A block already exists there.",
+                });
+                return;
+            }
+
+            // Broadcast to ALL clients (including the sender, so their local
+            // prediction is confirmed by the server).
+            io.emit("block:placed", { x, y, z, type: blockType });
+            console.log(`${player.name} placed ${blockType} at (${x},${y},${z})`);
+        } catch (err) {
+            console.error("block:place error:", err);
+        }
+    });
+
+    // --------------------------------------------------
+    // BLOCK: REMOVE
+    // --------------------------------------------------
+
+    socket.on("block:remove", async (data) => {
+        if (!data) return;
+
+        const { x, y, z } = data;
+
+        if (!world.isValidBlockCoord(x, y, z)) {
+            socket.emit("request_rejected", {
+                action: "block:remove",
+                reason: "Invalid block coordinates.",
+            });
+            return;
+        }
+
+        try {
+            const removed = await world.removeBlock(x, y, z);
+            if (!removed) {
+                socket.emit("request_rejected", {
+                    action: "block:remove",
+                    reason: "No block found at that position.",
+                });
+                return;
+            }
+
+            io.emit("block:removed", { x, y, z });
+            console.log(`${player.name} removed block at (${x},${y},${z})`);
+        } catch (err) {
+            console.error("block:remove error:", err);
+        }
+    });
+
+    // --------------------------------------------------
+    // CHAT
+    // --------------------------------------------------
+
+    socket.on("chat:message", (data) => {
+        if (!data || typeof data.message !== "string") return;
+
+        const message = data.message.trim();
+        if (message.length === 0 || message.length > 500) return;
+
+        const chatPayload = {
+            playerId:   player.id,
+            playerName: player.name,
+            message,
+            timestamp:  Date.now(),
+        };
+
+        // Broadcast to everyone (including sender).
+        io.emit("chat:message", chatPayload);
+
+        console.log(`[Chat] ${player.name}: ${message}`);
     });
 
     // --------------------------------------------------
     // DISCONNECT
     // --------------------------------------------------
 
-    socket.on("disconnect", (reason) => {
-        const activePlayer = players.get(socket.id);
-        if (!activePlayer) {
-            return;
+    socket.on("disconnect", async (reason) => {
+        const p = players.get(socket.id);
+        if (!p) return;
+
+        resetPlayerMovementInput(p);
+
+        // Save the player's last position to MongoDB.
+        try {
+            await prisma.user.update({
+                where: { id: p.userId },
+                data: {
+                    posX: p.position.x,
+                    posY: p.position.y,
+                    posZ: p.position.z,
+                },
+            });
+        } catch (err) {
+            console.error(`Failed to save position for ${p.name}:`, err);
         }
 
-        // Stop input immediately
-        resetPlayerMovementInput(activePlayer);
+        players.delete(socket.id);
 
-        const room = getDimensionRoom(activePlayer.dimensionId);
+        // Tell all other clients this player left.
+        socket.broadcast.emit("player_left", { playerId: socket.id, name: p.name });
 
-        // Notify players who share this dimension.
-        socket.to(room).emit("player_left", {
-            playerId: activePlayer.id,
-            name: activePlayer.name,
-            dimensionId: activePlayer.dimensionId,
-            reason: "disconnected"
-        });
-
-        // Remove the player from server state.
-        players.delete(activePlayer.id);
-
-        console.log(
-            `${activePlayer.name} disconnected from ${activePlayer.dimensionId}. Reason: ${reason}`
-        );
+        console.log(`${p.name} disconnected. Reason: ${reason}`);
     });
 });
 
@@ -335,14 +307,18 @@ io.on("connection", (socket) => {
 // START SERVER
 // --------------------------------------------------
 
-httpServer.listen(PORT, () => {
-    console.log(`Somewhere server running on port ${PORT}`);
+async function start() {
+    // Load the block world from MongoDB (or seed it if empty).
+    await world.loadWorld();
+
+    httpServer.listen(PORT, () => {
+        console.log(`Somewhere server running → http://localhost:${PORT}`);
+    });
+}
+
+start().catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
 });
 
-module.exports = {
-    app,
-    httpServer,
-    players,
-    simulationInterval,
-    snapshotInterval
-};
+module.exports = { app, httpServer };
