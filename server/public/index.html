@@ -168,20 +168,6 @@
             font-size: 0.85rem;
             color: #aaa;
         }
-
-        /* Controls help */
-        #controls-help {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            color: #aaa;
-            line-height: 1.6;
-            pointer-events: none;
-        }
     </style>
 </head>
 
@@ -227,14 +213,7 @@
             <div class="coords" id="hud-players">Players: 1</div>
         </div>
 
-        <!-- Controls help -->
-        <div id="controls-help">
-            WASD — Move<br>
-            Mouse — Look<br>
-            Left Click — Remove block<br>
-            Right Click — Place block<br>
-            / — Chat
-        </div>
+        <!-- Controls help (removed) -->
 
         <!-- Block type selector -->
         <div id="block-selector">
@@ -269,13 +248,31 @@
         // ⚙️  CONFIGURATION — Adjust these values to tweak behaviour
         // ================================================================
 
-        // --- Camera (Third-Person) ---
-        const CAMERA_FOV = 65;   // Camera field of view (degrees)
-        const CAMERA_HEIGHT = 0.75;  // Vertical offset above the player pivot
-        const CAMERA_SHOULDER_OFFSET = 0.85;  // Horizontal offset to the right (over-the-shoulder)
+        // --- Camera (Third-Person Pivot-Orbit) ---
+        const CAMERA_FOV = 60;              // Field of view (degrees)
+        const CAMERA_PIVOT_HEIGHT = 1;    // Pivot point height above player feet (upper-chest level)
+        const CAMERA_ARM_LENGTH = 4.25;      // Distance from pivot to camera (orbit radius)
+        const CAMERA_SHOULDER_OFFSET = 1.5; // Horizontal offset to the right (over-the-shoulder)
+        const CAMERA_PITCH_MIN = -1.0;      // Max look-down (radians, ~-57°)
+        const CAMERA_PITCH_MAX = 0.8;       // Max look-up (radians, ~46°)
+        const CAMERA_MIN_HEIGHT = 0.3;      // Minimum camera height above ground (avoid going underground)
 
         // --- Floating Chat Text ---
-        const MAX_FLOATING_TEXT_LENGTH = 80;  // Max characters before auto-release
+        const CHAT_MAX_LENGTH = 100;   // Max characters before auto-release
+        const CHAT_OFFSET_X = 0.0;  // Text offset right of player (world units)
+        const CHAT_OFFSET_Y = 0.1;  // Text offset above player pivot (world units)
+        const CHAT_OFFSET_Z = 0.0;  // Text offset forward/back from player
+        const CHAT_REMOTE_OFFSET_X = 0.0;  // Same offsets for remote players
+        const CHAT_REMOTE_OFFSET_Y = 0.9;  // (higher because mesh anchor differs)
+        const CHAT_REMOTE_OFFSET_Z = 0.0;
+        const CHAT_SPRITE_HEIGHT = 0.5;  // Base height of a single text line (world units)
+        const CHAT_FONT_SIZE = 48;   // Font size on the internal canvas (px)
+        const CHAT_LINE_HEIGHT = 1.3;  // Line height multiplier (× font size)
+        const CHAT_WRAP_WIDTH = 764;  // Max canvas width for word-wrap (px)
+        const CHAT_OUTLINE_WIDTH = 6;    // Text outline stroke width (px)
+        const CHAT_FLOAT_SPEED = 0.3;  // Released text float-up speed (units/s)
+        const CHAT_FADE_DURATION = 4.0;  // Seconds before fully faded
+        const CHAT_FADE_START = 0.4;  // Fraction of duration before fading begins
 
         // ================================================================
         // STEP 1: CHECK AUTH — show login or game screen
@@ -340,9 +337,9 @@
             // THIRD-PERSON CAMERA + CUSTOM MOUSE LOOK
             // ================================================================
 
-            // Camera yaw/pitch controlled by mouse. No PointerLockControls.
-            let cameraYaw = 0;   // horizontal rotation (radians)
-            let cameraPitch = -0.3; // vertical tilt (radians, slightly looking down)
+            // Camera yaw/pitch controlled by mouse.
+            let cameraYaw = 0;    // horizontal orbit angle (radians)
+            let cameraPitch = -0.25; // vertical orbit angle (radians, slightly above horizontal)
             let pointerLocked = false;
 
             const clickToPlay = document.getElementById('click-to-play');
@@ -366,53 +363,91 @@
                 const sensitivity = 0.002;
                 cameraYaw -= e.movementX * sensitivity;
                 cameraPitch -= e.movementY * sensitivity;
-                // Clamp pitch so the camera doesn't flip.
-                cameraPitch = Math.max(-1.2, Math.min(0.8, cameraPitch));
+                cameraPitch = Math.max(CAMERA_PITCH_MIN, Math.min(CAMERA_PITCH_MAX, cameraPitch));
             });
 
             // ---- LOCAL PLAYER MESH ----
-            // A visible body for the local player (third-person view).
             const localPlayerGeo = new THREE.BoxGeometry(0.6, 1.8, 0.6);
             const localPlayerMat = new THREE.MeshLambertMaterial({ color: 0x3a86ff }); // blue
             const localPlayerMesh = new THREE.Mesh(localPlayerGeo, localPlayerMat);
             localPlayerMesh.castShadow = true;
             scene.add(localPlayerMesh);
 
-            // Fortnite-style third-person camera:
-            //  - Camera sits BEHIND and to the RIGHT of the player (player on left of screen).
-            //  - Camera looks FORWARD in the same direction the player faces — NOT at the player.
-            //  - Three.js convention: rotation.y = 0 faces -Z.
-            //  - Forward = (-sinY, 0, -cosY)
-            //  - Right   = ( cosY, 0, -sinY)
-            //  - Behind  = ( sinY, 0,  cosY)
-            const CAM_RIGHT = CAMERA_SHOULDER_OFFSET;  // offset to the right (over-the-shoulder)
-            const CAM_UP = CAMERA_HEIGHT;             // height above player pivot
-            const CAM_BEHIND = 4.0;  // distance behind the player
+            // ================================================================
+            // PIVOT-ORBIT THIRD-PERSON CAMERA
+            // ================================================================
+            //
+            // How it works (like Fortnite / most 3rd-person games):
+            //
+            //   1. A PIVOT point sits at the player's upper-chest height.
+            //   2. The camera ORBITS around this pivot using yaw (horizontal)
+            //      and pitch (vertical).
+            //   3. A SHOULDER OFFSET shifts the camera to the right so the
+            //      player appears on the left side of the screen.
+            //   4. The camera always looks at the pivot — this means:
+            //      - Looking down → camera rises above the player.
+            //      - Looking up   → camera drops toward the player's feet.
+            //   5. The player mesh rotates to match the camera yaw, keeping
+            //      movement and camera direction synchronised.
+            //
+            // Three.js convention: rotation.y = 0 faces -Z.
+            //   Forward = (-sinY, 0, -cosY)
+            //   Right   = ( cosY, 0, -sinY)
+            //   Behind  = ( sinY, 0,  cosY)
 
             function updateCamera() {
-                // Position the player mesh (feet anchored to ground).
-                localPlayerMesh.position.set(localPos.x, localPos.y - 0.9, localPos.z);
+                // ---- Player mesh ----
+                // Player feet are at localPos.y - 0.9 (half the 1.8-tall box).
+                const feetY = localPos.y - 0.9;
+                localPlayerMesh.position.set(localPos.x, feetY, localPos.z);
                 localPlayerMesh.rotation.y = cameraYaw;
 
+                // ---- Pivot point (upper chest) ----
+                const pivotX = localPos.x;
+                const pivotY = feetY + CAMERA_PIVOT_HEIGHT;
+                const pivotZ = localPos.z;
+
+                // ---- Orbit position ----
+                // The camera orbits around the pivot at CAMERA_ARM_LENGTH distance.
+                // pitch=0 → camera is level with pivot, behind the player.
+                // pitch<0 → camera rises above (looking down at player).
+                // pitch>0 → camera drops below (looking up past player).
                 const sinY = Math.sin(cameraYaw);
                 const cosY = Math.cos(cameraYaw);
+                const cosP = Math.cos(cameraPitch);
+                const sinP = Math.sin(cameraPitch);
 
-                // Behind + Right offset, rotated by yaw.
-                const camX = localPos.x + sinY * CAM_BEHIND + cosY * CAM_RIGHT;
-                const camY = localPos.y + CAM_UP;
-                const camZ = localPos.z + cosY * CAM_BEHIND - sinY * CAM_RIGHT;
+                // Orbit offset in world space (behind and vertically orbiting).
+                // "Behind" direction (XZ, rotated by yaw): (sinY, cosY)
+                // Vertical component from pitch: arm * sinP goes up/down.
+                // Horizontal component from pitch: arm * cosP gives the XZ distance.
+                const armXZ = CAMERA_ARM_LENGTH * cosP;  // horizontal distance from pivot
+                const armY = -CAMERA_ARM_LENGTH * sinP;  // vertical offset (pitch<0 → armY>0 → above)
+
+                let camX = pivotX + sinY * armXZ;
+                let camY = pivotY + armY;
+                let camZ = pivotZ + cosY * armXZ;
+
+                // ---- Shoulder offset (applied in world-right direction) ----
+                // This shifts the camera to the right WITHOUT changing where it
+                // looks, so the player appears on the left of the screen.
+                camX += cosY * CAMERA_SHOULDER_OFFSET;
+                camZ -= sinY * CAMERA_SHOULDER_OFFSET;
+
+                // ---- Clamp camera height above ground ----
+                if (camY < CAMERA_MIN_HEIGHT) camY = CAMERA_MIN_HEIGHT;
 
                 camera.position.set(camX, camY, camZ);
 
-                // Look FORWARD from the camera (same direction the player faces),
-                // with vertical pitch applied.  NOT at the player.
+                // ---- Look FORWARD (not at the player) ----
+                // The camera looks in the player's forward direction with pitch
+                // applied. This keeps camera and player yaw synchronised and
+                // prevents the shoulder offset from introducing an unwanted angle.
                 const lookDist = 50;
-                const cosPitch = Math.cos(cameraPitch);
-                const lookX = camX + (-sinY) * lookDist * cosPitch;
-                const lookY = camY + Math.sin(cameraPitch) * lookDist;
-                const lookZ = camZ + (-cosY) * lookDist * cosPitch;
-
-                camera.lookAt(lookX, lookY, lookZ);
+                const fwdX = -sinY * cosP;  // forward direction with pitch
+                const fwdY = sinP;
+                const fwdZ = -cosY * cosP;
+                camera.lookAt(camX + fwdX * lookDist, camY + fwdY * lookDist, camZ + fwdZ * lookDist);
             }
 
             // ================================================================
@@ -648,14 +683,14 @@
                     }
                     // Only accept printable single characters.
                     if (e.key.length === 1) {
-                        if (chatText.length < MAX_FLOATING_TEXT_LENGTH) {
+                        if (chatText.length < CHAT_MAX_LENGTH) {
                             chatText += e.key;
                             updateLocalChatSprite();
                             socket.emit('chat:typing', { text: chatText });
                         }
-                        // Auto-release if at max length.
-                        if (chatText.length >= MAX_FLOATING_TEXT_LENGTH) {
-                            releaseChat();
+                        // Auto-release if at max length (stay in chat mode).
+                        if (chatText.length >= CHAT_MAX_LENGTH) {
+                            releaseChat(false);
                         }
                     }
                     return; // Block everything else while chatting.
@@ -722,30 +757,72 @@
             // Array of released (floating-up, fading) chat sprites.
             const releasedChatSprites = [];
 
+            // Rotate a local-space (right, up, forward) offset by a yaw angle
+            // into world-space coordinates.  This keeps the text anchored to
+            // the player's right/front side regardless of facing direction.
+            //
+            // Three.js convention (rotation.y = 0 → faces -Z):
+            //   Right   = ( cosY, 0, -sinY)
+            //   Forward = (-sinY, 0, -cosY)
+            function chatWorldOffset(rightOff, upOff, fwdOff, yaw) {
+                const sinY = Math.sin(yaw);
+                const cosY = Math.cos(yaw);
+                return {
+                    x: cosY * rightOff + (-sinY) * fwdOff,
+                    y: upOff,
+                    z: -sinY * rightOff + (-cosY) * fwdOff,
+                };
+            }
+
             // Creates an outlined text sprite with word wrapping.
+            // Uses the CHAT_* config constants for sizing.
             function createTextSprite(text, maxWidth) {
                 const cnv = document.createElement('canvas');
                 const ctx = cnv.getContext('2d');
-                const fontSize = 48;
-                const lineHeight = fontSize * 1.3;
+                const fontSize = CHAT_FONT_SIZE;
+                const lineHeight = fontSize * CHAT_LINE_HEIGHT;
                 const padding = 16;
-                const maxCanvasWidth = maxWidth || 1024;
+                const maxCanvasWidth = maxWidth || CHAT_WRAP_WIDTH;
 
                 ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
 
-                // Word-wrap the text to avoid squishing.
+                const maxTextWidth = maxCanvasWidth - padding * 2;
+
+                // Break a single word that's too wide by inserting hyphens.
+                function breakLongWord(word) {
+                    const parts = [];
+                    while (ctx.measureText(word).width > maxTextWidth) {
+                        // Find how many chars fit with a trailing '-'.
+                        let cut = word.length;
+                        while (cut > 1 && ctx.measureText(word.slice(0, cut) + '-').width > maxTextWidth) {
+                            cut--;
+                        }
+                        parts.push(word.slice(0, cut) + '-');
+                        word = word.slice(cut);
+                    }
+                    if (word) parts.push(word);
+                    return parts;
+                }
+
+                // Word-wrap the text, breaking long words with hyphens.
                 const words = (text || ' ').split(' ');
                 const lines = [];
                 let currentLine = '';
 
                 for (const word of words) {
-                    const testLine = currentLine ? currentLine + ' ' + word : word;
-                    const metrics = ctx.measureText(testLine);
-                    if (metrics.width > maxCanvasWidth - padding * 2 && currentLine) {
-                        lines.push(currentLine);
-                        currentLine = word;
-                    } else {
-                        currentLine = testLine;
+                    // If the single word is wider than the max, break it.
+                    const wordParts = ctx.measureText(word).width > maxTextWidth
+                        ? breakLongWord(word)
+                        : [word];
+
+                    for (const part of wordParts) {
+                        const testLine = currentLine ? currentLine + ' ' + part : part;
+                        if (ctx.measureText(testLine).width > maxTextWidth && currentLine) {
+                            lines.push(currentLine);
+                            currentLine = part;
+                        } else {
+                            currentLine = testLine;
+                        }
                     }
                 }
                 if (currentLine) lines.push(currentLine);
@@ -771,11 +848,9 @@
                 // Draw each line.
                 for (let i = 0; i < lines.length; i++) {
                     const cy = padding + lineHeight * (i + 0.5);
-                    // Black outline.
-                    ctx.lineWidth = 6;
+                    ctx.lineWidth = CHAT_OUTLINE_WIDTH;
                     ctx.strokeStyle = '#000';
                     ctx.strokeText(lines[i], cx, cy);
-                    // White fill.
                     ctx.fillStyle = '#fff';
                     ctx.fillText(lines[i], cx, cy);
                 }
@@ -790,9 +865,12 @@
                 });
                 const sprite = new THREE.Sprite(spriteMat);
 
+                // Anchor at bottom-center so text grows upward from the offset point.
+                sprite.center.set(0.5, 0);
+
                 // Scale to reasonable world size.
                 const aspect = cnv.width / cnv.height;
-                const height = 0.5 * lines.length;
+                const height = CHAT_SPRITE_HEIGHT * lines.length;
                 sprite.scale.set(height * aspect, height, 1);
 
                 return sprite;
@@ -809,41 +887,41 @@
 
                 if (!chatMode || chatText.length === 0) return;
 
-                localChatSprite = createTextSprite(chatText, 1024);
+                localChatSprite = createTextSprite(chatText, CHAT_WRAP_WIDTH);
                 scene.add(localChatSprite);
                 // Position will be updated each frame in animate().
             }
 
             function createReleasedChatSprite(text, worldX, worldY, worldZ) {
                 if (!text || text.trim().length === 0) return;
-                const sprite = createTextSprite(text, 1024);
+                const sprite = createTextSprite(text, CHAT_WRAP_WIDTH);
                 sprite.position.set(worldX, worldY, worldZ);
                 scene.add(sprite);
                 releasedChatSprites.push({
                     sprite,
                     age: 0,
-                    maxAge: 4.0, // seconds before fully faded
-                    floatSpeed: 0.3, // units per second upward
+                    maxAge: CHAT_FADE_DURATION,
+                    floatSpeed: CHAT_FLOAT_SPEED,
                 });
             }
 
-            function releaseChat() {
+            function releaseChat(exitChatMode = true) {
                 if (chatText.trim().length > 0) {
                     // Send chat message to server.
                     socket.emit('chat:message', { message: chatText.trim() });
 
-                    // Always compute release position from the player's current
-                    // location, matching the formula in animate(). This ensures
-                    // both manual and auto-release originate from the same spot
-                    // the typing sprite occupied.
-                    const releaseX = localPos.x + 0.8;
-                    const releaseY = localPos.y + 0.5;
-                    const releaseZ = localPos.z;
+                    // Release from the player's current position using the
+                    // same yaw-rotated offset the animate loop uses, so there
+                    // is zero positional jump.
+                    const off = chatWorldOffset(CHAT_OFFSET_X, CHAT_OFFSET_Y, CHAT_OFFSET_Z, cameraYaw);
+                    const releaseX = localPos.x + off.x;
+                    const releaseY = localPos.y + off.y;
+                    const releaseZ = localPos.z + off.z;
 
                     createReleasedChatSprite(chatText.trim(), releaseX, releaseY, releaseZ);
                 }
                 chatText = '';
-                chatMode = false;
+                if (exitChatMode) chatMode = false;
                 // Remove typing sprite.
                 if (localChatSprite) {
                     scene.remove(localChatSprite);
@@ -865,12 +943,14 @@
                     remote.chatSprite = null;
                 }
                 if (data.text && data.text.length > 0) {
-                    remote.chatSprite = createTextSprite(data.text, 1024);
-                    // Position it above the remote player.
+                    remote.chatSprite = createTextSprite(data.text, CHAT_WRAP_WIDTH);
+                    // Initial position (updated each frame in animate loop).
+                    const rYaw = remote.targetYaw || 0;
+                    const rOff = chatWorldOffset(CHAT_REMOTE_OFFSET_X, CHAT_REMOTE_OFFSET_Y, CHAT_REMOTE_OFFSET_Z, rYaw);
                     remote.chatSprite.position.set(
-                        remote.mesh.position.x + 0.8,
-                        remote.mesh.position.y + 1.3,
-                        remote.mesh.position.z
+                        remote.mesh.position.x + rOff.x,
+                        remote.mesh.position.y + rOff.y,
+                        remote.mesh.position.z + rOff.z
                     );
                     scene.add(remote.chatSprite);
                 }
@@ -1015,13 +1095,13 @@
                 // --- UPDATE THIRD-PERSON CAMERA ---
                 updateCamera();
 
-                // --- POSITION LOCAL CHAT SPRITE ---
+                // --- POSITION LOCAL CHAT SPRITE (follows player each frame) ---
                 if (localChatSprite) {
-                    // Float to the right of the player's head.
+                    const off = chatWorldOffset(CHAT_OFFSET_X, CHAT_OFFSET_Y, CHAT_OFFSET_Z, cameraYaw);
                     localChatSprite.position.set(
-                        localPos.x + 0.8,
-                        localPos.y + 0.5,
-                        localPos.z
+                        localPos.x + off.x,
+                        localPos.y + off.y,
+                        localPos.z + off.z
                     );
                 }
 
@@ -1031,8 +1111,8 @@
                     rc.age += dt;
                     // Float upward.
                     rc.sprite.position.y += rc.floatSpeed * dt;
-                    // Fade out in the second half of life.
-                    const fadeStart = rc.maxAge * 0.4;
+                    // Fade out after CHAT_FADE_START fraction of life.
+                    const fadeStart = rc.maxAge * CHAT_FADE_START;
                     if (rc.age > fadeStart) {
                         const fadeProgress = (rc.age - fadeStart) / (rc.maxAge - fadeStart);
                         rc.sprite.material.opacity = Math.max(0, 1 - fadeProgress);
@@ -1068,12 +1148,14 @@
                         remote.mesh.rotation.y = remote.targetYaw;
                     }
 
-                    // Update remote chat sprite position.
+                    // Update remote chat sprite position (follows the remote player).
                     if (remote.chatSprite) {
+                        const rYaw = remote.targetYaw || 0;
+                        const rOff = chatWorldOffset(CHAT_REMOTE_OFFSET_X, CHAT_REMOTE_OFFSET_Y, CHAT_REMOTE_OFFSET_Z, rYaw);
                         remote.chatSprite.position.set(
-                            remote.mesh.position.x + 0.8,
-                            remote.mesh.position.y + 1.3,
-                            remote.mesh.position.z
+                            remote.mesh.position.x + rOff.x,
+                            remote.mesh.position.y + rOff.y,
+                            remote.mesh.position.z + rOff.z
                         );
                     }
                 }
