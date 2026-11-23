@@ -6,7 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Somewhere</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
         body {
             background: #1a1a2e;
@@ -24,12 +28,18 @@
             height: 100vh;
             gap: 24px;
         }
+
         #login-screen h1 {
             font-size: 3rem;
             letter-spacing: 4px;
             color: #7ecfff;
         }
-        #login-screen p { color: #aaa; font-size: 1rem; }
+
+        #login-screen p {
+            color: #aaa;
+            font-size: 1rem;
+        }
+
         #google-login-btn {
             display: flex;
             align-items: center;
@@ -44,7 +54,10 @@
             cursor: pointer;
             text-decoration: none;
         }
-        #google-login-btn:hover { background: #f0f0f0; }
+
+        #google-login-btn:hover {
+            background: #f0f0f0;
+        }
 
         /* ---- GAME SCREEN ---- */
         #game-screen {
@@ -66,7 +79,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            color: rgba(255,255,255,0.8);
+            color: rgba(255, 255, 255, 0.8);
             font-size: 24px;
             pointer-events: none;
             user-select: none;
@@ -79,13 +92,18 @@
             position: absolute;
             top: 12px;
             left: 12px;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             padding: 8px 14px;
             border-radius: 6px;
             font-size: 0.85rem;
             pointer-events: none;
         }
-        #hud .coords { font-size: 0.75rem; color: #aaa; margin-top: 4px; }
+
+        #hud .coords {
+            font-size: 0.75rem;
+            color: #aaa;
+            margin-top: 4px;
+        }
 
         /* Block type selector */
         #block-selector {
@@ -95,10 +113,11 @@
             transform: translateX(-50%);
             display: flex;
             gap: 8px;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0, 0, 0, 0.6);
             padding: 8px 12px;
             border-radius: 8px;
         }
+
         .block-btn {
             width: 44px;
             height: 44px;
@@ -112,14 +131,17 @@
             align-items: center;
             justify-content: center;
         }
-        .block-btn.active { border-color: #fff; }
+
+        .block-btn.active {
+            border-color: #fff;
+        }
 
         /* Chat hint */
         #chat-hint {
             position: absolute;
             bottom: 24px;
             right: 16px;
-            color: rgba(255,255,255,0.5);
+            color: rgba(255, 255, 255, 0.5);
             font-size: 0.8rem;
             pointer-events: none;
             user-select: none;
@@ -131,21 +153,28 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.75);
+            background: rgba(0, 0, 0, 0.75);
             padding: 20px 36px;
             border-radius: 10px;
             text-align: center;
             pointer-events: none;
         }
-        #click-to-play h2 { margin-bottom: 8px; }
-        #click-to-play p { font-size: 0.85rem; color: #aaa; }
+
+        #click-to-play h2 {
+            margin-bottom: 8px;
+        }
+
+        #click-to-play p {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
 
         /* Controls help */
         #controls-help {
             position: absolute;
             top: 12px;
             right: 12px;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 0.75rem;
@@ -165,10 +194,14 @@
         <a id="google-login-btn" href="/auth/google">
             <!-- Google logo SVG -->
             <svg width="20" height="20" viewBox="0 0 48 48">
-                <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.3 9 3.4l6.7-6.7C35.8 2.5 30.3 0 24 0 14.7 0 6.8 5.4 2.9 13.3l7.8 6C12.4 13 17.8 9.5 24 9.5z"/>
-                <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8C43.4 37.3 46.5 31.3 46.5 24.5z"/>
-                <path fill="#FBBC05" d="M10.7 28.7A14.3 14.3 0 0 1 10 24c0-1.6.3-3.2.7-4.7l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.9 10.7l7.8-6z"/>
-                <path fill="#34A853" d="M24 48c6.3 0 11.6-2.1 15.5-5.7l-7.5-5.8c-2.1 1.4-4.7 2.2-8 2.2-6.2 0-11.5-4.2-13.3-9.9l-7.8 6C6.8 42.6 14.7 48 24 48z"/>
+                <path fill="#EA4335"
+                    d="M24 9.5c3.5 0 6.6 1.3 9 3.4l6.7-6.7C35.8 2.5 30.3 0 24 0 14.7 0 6.8 5.4 2.9 13.3l7.8 6C12.4 13 17.8 9.5 24 9.5z" />
+                <path fill="#4285F4"
+                    d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8C43.4 37.3 46.5 31.3 46.5 24.5z" />
+                <path fill="#FBBC05"
+                    d="M10.7 28.7A14.3 14.3 0 0 1 10 24c0-1.6.3-3.2.7-4.7l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.9 10.7l7.8-6z" />
+                <path fill="#34A853"
+                    d="M24 48c6.3 0 11.6-2.1 15.5-5.7l-7.5-5.8c-2.1 1.4-4.7 2.2-8 2.2-6.2 0-11.5-4.2-13.3-9.9l-7.8 6C6.8 42.6 14.7 48 24 48z" />
             </svg>
             Continue with Google
         </a>
@@ -233,15 +266,27 @@
         import * as THREE from 'three';
 
         // ================================================================
+        // ⚙️  CONFIGURATION — Adjust these values to tweak behaviour
+        // ================================================================
+
+        // --- Camera (Third-Person) ---
+        const CAMERA_FOV = 60;   // Camera field of view (degrees)
+        const CAMERA_HEIGHT = 0.75;  // Vertical offset above the player pivot
+        const CAMERA_SHOULDER_OFFSET = 1;  // Horizontal offset to the right (over-the-shoulder)
+
+        // --- Floating Chat Text ---
+        const MAX_FLOATING_TEXT_LENGTH = 80;  // Max characters before auto-release
+
+        // ================================================================
         // STEP 1: CHECK AUTH — show login or game screen
         // ================================================================
 
         const loginScreen = document.getElementById('login-screen');
-        const gameScreen  = document.getElementById('game-screen');
+        const gameScreen = document.getElementById('game-screen');
 
         let currentUser = null;
 
-        const meRes  = await fetch('/api/me');
+        const meRes = await fetch('/api/me');
         const meData = await meRes.json();
 
         if (!meData.loggedIn) {
@@ -250,7 +295,7 @@
             // Logged in — hide login, show game.
             currentUser = meData.user;
             loginScreen.style.display = 'none';
-            gameScreen.style.display  = 'block';
+            gameScreen.style.display = 'block';
 
             // Set HUD name
             document.getElementById('hud-name').textContent = currentUser.displayName;
@@ -266,18 +311,18 @@
 
             // ---- THREE.JS SCENE SETUP ----
 
-            const canvas   = document.getElementById('game-canvas');
+            const canvas = document.getElementById('game-canvas');
             const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-            const scene  = new THREE.Scene();
+            const scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87ceeb); // sky blue
-            scene.fog        = new THREE.Fog(0x87ceeb, 30, 60);
+            scene.fog = new THREE.Fog(0x87ceeb, 30, 60);
 
-            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            const camera = new THREE.PerspectiveCamera(CAMERA_FOV, window.innerWidth / window.innerHeight, 0.1, 100);
 
             // ---- LIGHTING ----
 
@@ -287,7 +332,7 @@
             const sun = new THREE.DirectionalLight(0xffffff, 1.0);
             sun.position.set(10, 20, 10);
             sun.castShadow = true;
-            sun.shadow.mapSize.width  = 1024;
+            sun.shadow.mapSize.width = 1024;
             sun.shadow.mapSize.height = 1024;
             scene.add(sun);
 
@@ -296,12 +341,12 @@
             // ================================================================
 
             // Camera yaw/pitch controlled by mouse. No PointerLockControls.
-            let cameraYaw   = 0;   // horizontal rotation (radians)
+            let cameraYaw = 0;   // horizontal rotation (radians)
             let cameraPitch = -0.3; // vertical tilt (radians, slightly looking down)
             let pointerLocked = false;
 
             const clickToPlay = document.getElementById('click-to-play');
-            const crosshair   = document.getElementById('crosshair');
+            const crosshair = document.getElementById('crosshair');
 
             // Request pointer lock on click.
             gameScreen.addEventListener('click', () => {
@@ -312,14 +357,14 @@
             document.addEventListener('pointerlockchange', () => {
                 pointerLocked = (document.pointerLockElement === canvas);
                 clickToPlay.style.display = pointerLocked ? 'none' : 'block';
-                crosshair.style.display   = pointerLocked ? 'block' : 'none';
+                crosshair.style.display = pointerLocked ? 'block' : 'none';
             });
 
             // Mouse look: update yaw/pitch from mouse movement.
             document.addEventListener('mousemove', (e) => {
                 if (!pointerLocked || chatMode) return;
                 const sensitivity = 0.002;
-                cameraYaw   -= e.movementX * sensitivity;
+                cameraYaw -= e.movementX * sensitivity;
                 cameraPitch -= e.movementY * sensitivity;
                 // Clamp pitch so the camera doesn't flip.
                 cameraPitch = Math.max(-1.2, Math.min(0.8, cameraPitch));
@@ -340,9 +385,9 @@
             //  - Forward = (-sinY, 0, -cosY)
             //  - Right   = ( cosY, 0, -sinY)
             //  - Behind  = ( sinY, 0,  cosY)
-            const CAM_RIGHT   = 1.5;  // offset to the right (over-the-shoulder)
-            const CAM_UP      = 1.8;  // height above player pivot
-            const CAM_BEHIND  = 4.0;  // distance behind the player
+            const CAM_RIGHT = CAMERA_SHOULDER_OFFSET;  // offset to the right (over-the-shoulder)
+            const CAM_UP = CAMERA_HEIGHT;             // height above player pivot
+            const CAM_BEHIND = 4.0;  // distance behind the player
 
             function updateCamera() {
                 // Position the player mesh (feet anchored to ground).
@@ -376,11 +421,11 @@
 
             // Block colors by type.
             const BLOCK_COLORS = {
-                dirt:  0x8B6914,
+                dirt: 0x8B6914,
                 grass: 0x4a7c59,
                 stone: 0x888888,
-                wood:  0x8B4513,
-                sand:  0xc2b280,
+                wood: 0x8B4513,
+                sand: 0xc2b280,
             };
 
             // Map "x,y,z" -> THREE.Mesh
@@ -402,10 +447,10 @@
                 const k = blockKey(x, y, z);
                 if (blockMeshes.has(k)) return; // already rendered
 
-                const mat  = blockMaterials[type] || blockMaterials.dirt;
+                const mat = blockMaterials[type] || blockMaterials.dirt;
                 const mesh = new THREE.Mesh(blockGeometry, mat);
                 mesh.position.set(x, y, z);
-                mesh.castShadow    = true;
+                mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 // Store coordinates on the mesh so the raycaster can read them.
                 mesh.userData = { x, y, z, type };
@@ -564,7 +609,7 @@
             // ================================================================
 
             const keys = { w: false, a: false, s: false, d: false };
-            let   lastSentInput = { forward: 0, strafe: 0, yaw: 0 };
+            let lastSentInput = { forward: 0, strafe: 0, yaw: 0 };
 
             // The server-authoritative position for reconciliation.
             const serverPos = {
@@ -577,7 +622,6 @@
             // When chatMode is true, all alphabet/gameplay keys are disabled.
             let chatMode = false;
             let chatText = '';
-            const CHAT_MAX_LENGTH = 80;
 
             window.addEventListener('keydown', (e) => {
                 // --- CHAT MODE INPUT ---
@@ -604,13 +648,13 @@
                     }
                     // Only accept printable single characters.
                     if (e.key.length === 1) {
-                        if (chatText.length < CHAT_MAX_LENGTH) {
+                        if (chatText.length < MAX_FLOATING_TEXT_LENGTH) {
                             chatText += e.key;
                             updateLocalChatSprite();
                             socket.emit('chat:typing', { text: chatText });
                         }
                         // Auto-release if at max length.
-                        if (chatText.length >= CHAT_MAX_LENGTH) {
+                        if (chatText.length >= MAX_FLOATING_TEXT_LENGTH) {
                             releaseChat();
                         }
                     }
@@ -623,8 +667,12 @@
                     e.preventDefault();
                     chatMode = true;
                     chatText = '';
-                    // Clear any held movement keys.
+                    // Clear any held movement keys so the player decelerates
+                    // naturally through the existing movement logic.
                     keys.w = false; keys.a = false; keys.s = false; keys.d = false;
+                    // Immediately send zero input to the server so it also
+                    // stops accelerating this player.
+                    sendMovementInput();
                     updateLocalChatSprite();
                     return;
                 }
@@ -647,13 +695,13 @@
                 if (!socket.connected) return;
 
                 const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
-                const strafe  = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-                const yaw     = getCameraYaw();
+                const strafe = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+                const yaw = getCameraYaw();
 
                 // Only send if something changed (don't spam the server).
                 if (
                     forward !== lastSentInput.forward ||
-                    strafe  !== lastSentInput.strafe  ||
+                    strafe !== lastSentInput.strafe ||
                     Math.abs(yaw - lastSentInput.yaw) > 0.01
                 ) {
                     lastSentInput = { forward, strafe, yaw };
@@ -674,18 +722,44 @@
             // Array of released (floating-up, fading) chat sprites.
             const releasedChatSprites = [];
 
-            // Creates an outlined text sprite.
+            // Creates an outlined text sprite with word wrapping.
             function createTextSprite(text, maxWidth) {
                 const cnv = document.createElement('canvas');
                 const ctx = cnv.getContext('2d');
                 const fontSize = 48;
+                const lineHeight = fontSize * 1.3;
                 const padding = 16;
+                const maxCanvasWidth = maxWidth || 1024;
+
                 ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
 
-                // Measure text and size canvas.
-                const measured = ctx.measureText(text || ' ');
-                cnv.width  = Math.min(measured.width + padding * 2, maxWidth || 1024);
-                cnv.height = fontSize + padding * 2;
+                // Word-wrap the text to avoid squishing.
+                const words = (text || ' ').split(' ');
+                const lines = [];
+                let currentLine = '';
+
+                for (const word of words) {
+                    const testLine = currentLine ? currentLine + ' ' + word : word;
+                    const metrics = ctx.measureText(testLine);
+                    if (metrics.width > maxCanvasWidth - padding * 2 && currentLine) {
+                        lines.push(currentLine);
+                        currentLine = word;
+                    } else {
+                        currentLine = testLine;
+                    }
+                }
+                if (currentLine) lines.push(currentLine);
+                if (lines.length === 0) lines.push(' ');
+
+                // Find the widest line to size the canvas.
+                let widestLine = 0;
+                for (const line of lines) {
+                    const w = ctx.measureText(line).width;
+                    if (w > widestLine) widestLine = w;
+                }
+
+                cnv.width = Math.min(widestLine + padding * 2, maxCanvasWidth);
+                cnv.height = lineHeight * lines.length + padding * 2;
 
                 // Re-set font after canvas resize.
                 ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
@@ -693,16 +767,18 @@
                 ctx.textAlign = 'center';
 
                 const cx = cnv.width / 2;
-                const cy = cnv.height / 2;
 
-                // Black outline.
-                ctx.lineWidth = 6;
-                ctx.strokeStyle = '#000';
-                ctx.strokeText(text || ' ', cx, cy, cnv.width - padding);
-
-                // White fill.
-                ctx.fillStyle = '#fff';
-                ctx.fillText(text || ' ', cx, cy, cnv.width - padding);
+                // Draw each line.
+                for (let i = 0; i < lines.length; i++) {
+                    const cy = padding + lineHeight * (i + 0.5);
+                    // Black outline.
+                    ctx.lineWidth = 6;
+                    ctx.strokeStyle = '#000';
+                    ctx.strokeText(lines[i], cx, cy);
+                    // White fill.
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(lines[i], cx, cy);
+                }
 
                 const texture = new THREE.CanvasTexture(cnv);
                 texture.needsUpdate = true;
@@ -716,7 +792,7 @@
 
                 // Scale to reasonable world size.
                 const aspect = cnv.width / cnv.height;
-                const height = 0.5;
+                const height = 0.5 * lines.length;
                 sprite.scale.set(height * aspect, height, 1);
 
                 return sprite;
@@ -756,16 +832,13 @@
                     // Send chat message to server.
                     socket.emit('chat:message', { message: chatText.trim() });
 
-                    // Use the typing sprite's CURRENT world position so there's
-                    // no visible jump when it transitions to the released state.
-                    let releaseX = localPos.x + 0.8;
-                    let releaseY = localPos.y + 0.5;
-                    let releaseZ = localPos.z;
-                    if (localChatSprite) {
-                        releaseX = localChatSprite.position.x;
-                        releaseY = localChatSprite.position.y;
-                        releaseZ = localChatSprite.position.z;
-                    }
+                    // Always compute release position from the player's current
+                    // location, matching the formula in animate(). This ensures
+                    // both manual and auto-release originate from the same spot
+                    // the typing sprite occupied.
+                    const releaseX = localPos.x + 0.8;
+                    const releaseY = localPos.y + 0.5;
+                    const releaseZ = localPos.z;
 
                     createReleasedChatSprite(chatText.trim(), releaseX, releaseY, releaseZ);
                 }
@@ -808,7 +881,7 @@
             // ================================================================
 
             const raycaster = new THREE.Raycaster();
-            raycaster.far   = 6; // Can only reach blocks within 6 units.
+            raycaster.far = 6; // Can only reach blocks within 6 units.
 
             let selectedBlockType = 'dirt';
 
@@ -898,15 +971,15 @@
                 // --- LOCAL PREDICTION ---
                 // We predict movement locally so the game feels instant.
                 // The server position is used to correct drift.
-                if (pointerLocked && !chatMode) {
+                if (pointerLocked) {
                     const speed = 8;
                     const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
-                    const strafe  = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+                    const strafe = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
 
                     if (forward !== 0 || strafe !== 0) {
                         // Use the LAST SENT yaw (same value the server uses)
                         // so client prediction matches server exactly.
-                        const yaw    = lastSentInput.yaw;
+                        const yaw = lastSentInput.yaw;
                         const sinYaw = Math.sin(yaw);
                         const cosYaw = Math.cos(yaw);
 
@@ -1034,4 +1107,5 @@
     </script>
 
 </body>
+
 </html>
