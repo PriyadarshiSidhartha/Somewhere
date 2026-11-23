@@ -345,11 +345,34 @@
             const clickToPlay = document.getElementById('click-to-play');
             const crosshair = document.getElementById('crosshair');
 
-            // Request pointer lock on click.
-            gameScreen.addEventListener('click', () => {
-                if (chatMode) return;
-                canvas.requestPointerLock();
+            // Safe helper to request pointer lock across all browsers
+            function requestLock() {
+                if (document.pointerLockElement === canvas) return;
+                try {
+                    const res = canvas.requestPointerLock();
+                    if (res && typeof res.catch === 'function') {
+                        res.catch((err) => {
+                            console.warn('Pointer lock request rejected:', err);
+                        });
+                    }
+                } catch (err) {
+                    console.warn('Pointer lock error:', err);
+                }
+            }
+
+            // Request pointer lock on click anywhere in the game (even in chat mode).
+            window.addEventListener('click', (e) => {
+                if (e.target && e.target.closest && e.target.closest('#block-selector')) return;
+                requestLock();
             });
+
+            // Programmatically exit pointer lock on Escape to avoid Chrome's
+            // ~1.25s user-escape lockout on subsequent requestPointerLock() calls.
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && document.pointerLockElement) {
+                    document.exitPointerLock();
+                }
+            }, true);
 
             document.addEventListener('pointerlockchange', () => {
                 pointerLocked = (document.pointerLockElement === canvas);
@@ -357,9 +380,9 @@
                 crosshair.style.display = pointerLocked ? 'block' : 'none';
             });
 
-            // Mouse look: update yaw/pitch from mouse movement.
+            // Mouse look: update yaw/pitch from mouse movement whenever pointer is locked.
             document.addEventListener('mousemove', (e) => {
-                if (!pointerLocked || chatMode) return;
+                if (!pointerLocked) return;
                 const sensitivity = 0.002;
                 cameraYaw -= e.movementX * sensitivity;
                 cameraPitch -= e.movementY * sensitivity;
