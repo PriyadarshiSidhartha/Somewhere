@@ -69,11 +69,11 @@ function isValidMovementInput(data) {
 
     // forward/strafe must be numbers in [-1, 1]
     if (typeof data.forward !== "number" || !Number.isFinite(data.forward)) return false;
-    if (typeof data.strafe  !== "number" || !Number.isFinite(data.strafe))  return false;
-    if (typeof data.yaw     !== "number" || !Number.isFinite(data.yaw))     return false;
+    if (typeof data.strafe !== "number" || !Number.isFinite(data.strafe)) return false;
+    if (typeof data.yaw !== "number" || !Number.isFinite(data.yaw)) return false;
 
     if (data.forward < -1 || data.forward > 1) return false;
-    if (data.strafe  < -1 || data.strafe  > 1) return false;
+    if (data.strafe < -1 || data.strafe > 1) return false;
     // yaw is any angle in radians — just check it's a reasonable number
     if (Math.abs(data.yaw) > 2 * Math.PI * 100) return false;
 
@@ -85,15 +85,15 @@ function setPlayerMovementInput(player, inputData) {
         return false;
     }
     player.input.forward = inputData.forward;
-    player.input.strafe  = inputData.strafe;
-    player.input.yaw     = inputData.yaw;
+    player.input.strafe = inputData.strafe;
+    player.input.yaw = inputData.yaw;
     return true;
 }
 
 function resetPlayerMovementInput(player) {
     if (player && player.input) {
         player.input.forward = 0;
-        player.input.strafe  = 0;
+        player.input.strafe = 0;
     }
 }
 
@@ -107,14 +107,14 @@ function updatePlayerPosition(player, deltaTime) {
     if (forward === 0 && strafe === 0) return;
 
     // Decompose forward/strafe into world-space XZ velocity using the camera yaw.
-    // yaw=0 → facing +Z, yaw=π/2 → facing +X (standard 3D convention).
+    // Three.js convention: rotation.y = 0 faces -Z direction.
+    // Forward direction = (-sinYaw, 0, -cosYaw)
+    // Right (strafe) direction = (cosYaw, 0, -sinYaw)
     const sinYaw = Math.sin(yaw);
     const cosYaw = Math.cos(yaw);
 
-    // Forward vector in world XZ: (sinYaw, cosYaw)
-    // Strafe vector is perpendicular: (cosYaw, -sinYaw)
-    let dx = sinYaw * forward + cosYaw * strafe;
-    let dz = cosYaw * forward - sinYaw * strafe;
+    let dx = -sinYaw * forward + cosYaw * strafe;
+    let dz = -cosYaw * forward - sinYaw * strafe;
 
     // Normalize diagonal movement so you don't go faster diagonally.
     const magnitude = Math.hypot(dx, dz);

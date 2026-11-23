@@ -71,6 +71,7 @@
             pointer-events: none;
             user-select: none;
             text-shadow: 1px 1px 2px #000;
+            display: none;
         }
 
         /* HUD: player name top-left */
@@ -113,52 +114,16 @@
         }
         .block-btn.active { border-color: #fff; }
 
-        /* ---- CHAT ---- */
-        #chat-container {
+        /* Chat hint */
+        #chat-hint {
             position: absolute;
-            bottom: 20px;
+            bottom: 24px;
             right: 16px;
-            width: 300px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        #chat-messages {
-            background: rgba(0,0,0,0.5);
-            border-radius: 6px;
-            padding: 8px;
-            height: 200px;
-            overflow-y: auto;
+            color: rgba(255,255,255,0.5);
             font-size: 0.8rem;
-            line-height: 1.4;
-            word-break: break-word;
+            pointer-events: none;
+            user-select: none;
         }
-        #chat-messages div { margin-bottom: 4px; }
-        #chat-messages .self { color: #7ecfff; }
-        #chat-form {
-            display: flex;
-            gap: 6px;
-        }
-        #chat-input {
-            flex: 1;
-            padding: 6px 10px;
-            background: rgba(0,0,0,0.6);
-            border: 1px solid #555;
-            border-radius: 4px;
-            color: #eee;
-            font-size: 0.85rem;
-            outline: none;
-        }
-        #chat-send {
-            padding: 6px 12px;
-            background: #3a86ff;
-            border: none;
-            border-radius: 4px;
-            color: #fff;
-            cursor: pointer;
-            font-size: 0.85rem;
-        }
-        #chat-send:hover { background: #2167d1; }
 
         /* Pointer-lock click-to-play overlay */
         #click-to-play {
@@ -219,7 +184,7 @@
         <!-- Click-to-play hint (shown when pointer is not locked) -->
         <div id="click-to-play">
             <h2>Click to Play</h2>
-            <p>Your mouse will be captured for first-person view.<br>Press <strong>Escape</strong> to release.</p>
+            <p>Your mouse will be captured for camera control.<br>Press <strong>Escape</strong> to release.</p>
         </div>
 
         <!-- HUD -->
@@ -235,7 +200,7 @@
             Mouse — Look<br>
             Left Click — Remove block<br>
             Right Click — Place block<br>
-            Enter — Send chat
+            / — Chat
         </div>
 
         <!-- Block type selector -->
@@ -247,15 +212,8 @@
             <div class="block-btn" data-type="sand" style="background:#c2b280" title="Sand">Sand</div>
         </div>
 
-        <!-- Chat -->
-        <div id="chat-container">
-            <div id="chat-messages"></div>
-            <form id="chat-form">
-                <input id="chat-input" type="text" maxlength="500"
-                    placeholder="Press Enter to chat..." autocomplete="off">
-                <button id="chat-send" type="submit">Send</button>
-            </form>
-        </div>
+        <!-- Chat hint -->
+        <div id="chat-hint">Press "/" to chat</div>
     </div>
 
     <!-- Socket.IO client library (served by our server) -->
@@ -273,7 +231,6 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
         // ================================================================
         // STEP 1: CHECK AUTH — show login or game screen
@@ -321,8 +278,6 @@
             scene.fog        = new THREE.Fog(0x87ceeb, 30, 60);
 
             const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
-            // Start camera at player's last position from DB.
-            camera.position.set(user.position.x, user.position.y, user.position.z);
 
             // ---- LIGHTING ----
 
@@ -336,27 +291,84 @@
             sun.shadow.mapSize.height = 1024;
             scene.add(sun);
 
-            // ---- POINTER LOCK CONTROLS (first-person mouse look) ----
+            // ================================================================
+            // THIRD-PERSON CAMERA + CUSTOM MOUSE LOOK
+            // ================================================================
 
-            const controls      = new PointerLockControls(camera, document.body);
-            const clickToPlay   = document.getElementById('click-to-play');
-            const crosshair     = document.getElementById('crosshair');
+            // Camera yaw/pitch controlled by mouse. No PointerLockControls.
+            let cameraYaw   = 0;   // horizontal rotation (radians)
+            let cameraPitch = -0.3; // vertical tilt (radians, slightly looking down)
+            let pointerLocked = false;
 
+            const clickToPlay = document.getElementById('click-to-play');
+            const crosshair   = document.getElementById('crosshair');
+
+            // Request pointer lock on click.
             gameScreen.addEventListener('click', () => {
-                // Don't lock if the user is typing in chat.
-                if (document.activeElement === document.getElementById('chat-input')) return;
-                controls.lock();
+                if (chatMode) return;
+                canvas.requestPointerLock();
             });
 
-            controls.addEventListener('lock', () => {
-                clickToPlay.style.display = 'none';
-                crosshair.style.display   = 'block';
+            document.addEventListener('pointerlockchange', () => {
+                pointerLocked = (document.pointerLockElement === canvas);
+                clickToPlay.style.display = pointerLocked ? 'none' : 'block';
+                crosshair.style.display   = pointerLocked ? 'block' : 'none';
             });
 
-            controls.addEventListener('unlock', () => {
-                clickToPlay.style.display = 'block';
-                crosshair.style.display   = 'none';
+            // Mouse look: update yaw/pitch from mouse movement.
+            document.addEventListener('mousemove', (e) => {
+                if (!pointerLocked || chatMode) return;
+                const sensitivity = 0.002;
+                cameraYaw   -= e.movementX * sensitivity;
+                cameraPitch -= e.movementY * sensitivity;
+                // Clamp pitch so the camera doesn't flip.
+                cameraPitch = Math.max(-1.2, Math.min(0.8, cameraPitch));
             });
+
+            // ---- LOCAL PLAYER MESH ----
+            // A visible body for the local player (third-person view).
+            const localPlayerGeo = new THREE.BoxGeometry(0.6, 1.8, 0.6);
+            const localPlayerMat = new THREE.MeshLambertMaterial({ color: 0x3a86ff }); // blue
+            const localPlayerMesh = new THREE.Mesh(localPlayerGeo, localPlayerMat);
+            localPlayerMesh.castShadow = true;
+            scene.add(localPlayerMesh);
+
+            // Fortnite-style third-person camera:
+            //  - Camera sits BEHIND and to the RIGHT of the player (player on left of screen).
+            //  - Camera looks FORWARD in the same direction the player faces — NOT at the player.
+            //  - Three.js convention: rotation.y = 0 faces -Z.
+            //  - Forward = (-sinY, 0, -cosY)
+            //  - Right   = ( cosY, 0, -sinY)
+            //  - Behind  = ( sinY, 0,  cosY)
+            const CAM_RIGHT   = 1.5;  // offset to the right (over-the-shoulder)
+            const CAM_UP      = 1.8;  // height above player pivot
+            const CAM_BEHIND  = 4.0;  // distance behind the player
+
+            function updateCamera() {
+                // Position the player mesh (feet anchored to ground).
+                localPlayerMesh.position.set(localPos.x, localPos.y - 0.9, localPos.z);
+                localPlayerMesh.rotation.y = cameraYaw;
+
+                const sinY = Math.sin(cameraYaw);
+                const cosY = Math.cos(cameraYaw);
+
+                // Behind + Right offset, rotated by yaw.
+                const camX = localPos.x + sinY * CAM_BEHIND + cosY * CAM_RIGHT;
+                const camY = localPos.y + CAM_UP;
+                const camZ = localPos.z + cosY * CAM_BEHIND - sinY * CAM_RIGHT;
+
+                camera.position.set(camX, camY, camZ);
+
+                // Look FORWARD from the camera (same direction the player faces),
+                // with vertical pitch applied.  NOT at the player.
+                const lookDist = 50;
+                const cosPitch = Math.cos(cameraPitch);
+                const lookX = camX + (-sinY) * lookDist * cosPitch;
+                const lookY = camY + Math.sin(cameraPitch) * lookDist;
+                const lookZ = camZ + (-cosY) * lookDist * cosPitch;
+
+                camera.lookAt(lookX, lookY, lookZ);
+            }
 
             // ================================================================
             // BLOCK MANAGEMENT (CLIENT SIDE)
@@ -414,7 +426,7 @@
             // REMOTE PLAYER MESHES
             // ================================================================
 
-            // Map: socketId -> THREE.Mesh (a colored box to represent other players)
+            // Map: socketId -> { mesh, targetPos, name, chatSprite }
             const remotePlayers = new Map();
 
             const remoteGeometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
@@ -428,11 +440,13 @@
                     playerData.position.y - 0.9, // anchor feet to ground
                     playerData.position.z
                 );
+                mesh.castShadow = true;
                 scene.add(mesh);
                 remotePlayers.set(playerData.id, {
                     mesh,
                     targetPos: { ...playerData.position },
-                    name: playerData.name
+                    name: playerData.name,
+                    chatSprite: null,
                 });
             }
 
@@ -440,6 +454,7 @@
                 const data = remotePlayers.get(socketId);
                 if (data) {
                     scene.remove(data.mesh);
+                    if (data.chatSprite) scene.remove(data.chatSprite);
                     remotePlayers.delete(socketId);
                 }
             }
@@ -455,12 +470,13 @@
             // --- Welcome ---
             socket.on('welcome', (data) => {
                 mySocketId = socket.id;
-                // Snap camera to server-authoritative position.
-                camera.position.set(
-                    data.player.position.x,
-                    data.player.position.y,
-                    data.player.position.z
-                );
+                // Snap to server-authoritative position.
+                localPos.x = data.player.position.x;
+                localPos.y = data.player.position.y;
+                localPos.z = data.player.position.z;
+                serverPos.x = data.player.position.x;
+                serverPos.y = data.player.position.y;
+                serverPos.z = data.player.position.z;
                 console.log('Welcome!', data.player.name, 'at', data.player.position);
                 updateHudPlayers();
             });
@@ -484,14 +500,12 @@
             // --- Someone joins ---
             socket.on('player_joined', (player) => {
                 addRemotePlayer(player);
-                addChatMessage(`${player.name} joined the world.`, 'system');
                 updateHudPlayers();
             });
 
             // --- Someone leaves ---
             socket.on('player_left', (data) => {
                 removeRemotePlayer(data.playerId);
-                addChatMessage(`${data.name} left the world.`, 'system');
                 updateHudPlayers();
             });
 
@@ -509,6 +523,9 @@
                             remote.targetPos.x = update.position.x;
                             remote.targetPos.y = update.position.y - 0.9;
                             remote.targetPos.z = update.position.z;
+                            if (typeof update.yaw === 'number') {
+                                remote.targetYaw = update.yaw;
+                            }
                         }
                     }
                 }
@@ -528,11 +545,18 @@
                 console.warn(`[Rejected] ${data.action}: ${data.reason}`);
             });
 
-            // --- Chat ---
+            // --- Chat (floating text from other players) ---
             socket.on('chat:message', (data) => {
-                const isSelf = (data.playerId === mySocketId);
-                const sender = isSelf ? 'You' : data.playerName;
-                addChatMessage(`${sender}: ${data.message}`, isSelf ? 'self' : 'other');
+                if (data.playerId === mySocketId) return; // we already show our own
+                const remote = remotePlayers.get(data.playerId);
+                if (!remote) return;
+                // Create a floating released chat sprite at the remote player's head.
+                createReleasedChatSprite(
+                    data.message,
+                    remote.mesh.position.x,
+                    remote.mesh.position.y + 1.3,
+                    remote.mesh.position.z
+                );
             });
 
             // ================================================================
@@ -549,27 +573,82 @@
                 z: user.position.z,
             };
 
-            function isChatFocused() {
-                return document.activeElement === document.getElementById('chat-input');
-            }
+            // ---- CHAT MODE ----
+            // When chatMode is true, all alphabet/gameplay keys are disabled.
+            let chatMode = false;
+            let chatText = '';
+            const CHAT_MAX_LENGTH = 80;
 
             window.addEventListener('keydown', (e) => {
-                if (isChatFocused()) return;
+                // --- CHAT MODE INPUT ---
+                if (chatMode) {
+                    e.preventDefault();
+                    if (e.key === 'Escape') {
+                        // Cancel chat.
+                        chatText = '';
+                        chatMode = false;
+                        updateLocalChatSprite();
+                        return;
+                    }
+                    if (e.key === 'Enter') {
+                        // Release the chat message.
+                        releaseChat();
+                        return;
+                    }
+                    if (e.key === 'Backspace') {
+                        chatText = chatText.slice(0, -1);
+                        updateLocalChatSprite();
+                        // Send typing update to server for real-time display.
+                        socket.emit('chat:typing', { text: chatText });
+                        return;
+                    }
+                    // Only accept printable single characters.
+                    if (e.key.length === 1) {
+                        if (chatText.length < CHAT_MAX_LENGTH) {
+                            chatText += e.key;
+                            updateLocalChatSprite();
+                            socket.emit('chat:typing', { text: chatText });
+                        }
+                        // Auto-release if at max length.
+                        if (chatText.length >= CHAT_MAX_LENGTH) {
+                            releaseChat();
+                        }
+                    }
+                    return; // Block everything else while chatting.
+                }
+
+                // --- NORMAL GAMEPLAY INPUT ---
+                // Enter chat mode with "/" key.
+                if (e.key === '/') {
+                    e.preventDefault();
+                    chatMode = true;
+                    chatText = '';
+                    // Clear any held movement keys.
+                    keys.w = false; keys.a = false; keys.s = false; keys.d = false;
+                    updateLocalChatSprite();
+                    return;
+                }
+
                 const k = e.key.toLowerCase();
                 if (k in keys) { keys[k] = true; e.preventDefault(); }
             });
 
             window.addEventListener('keyup', (e) => {
+                if (chatMode) return; // ignore key-ups during chat
                 const k = e.key.toLowerCase();
                 if (k in keys) keys[k] = false;
             });
+
+            function getCameraYaw() {
+                return cameraYaw;
+            }
 
             function sendMovementInput() {
                 if (!socket.connected) return;
 
                 const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
                 const strafe  = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-                const yaw     = controls.getObject().rotation.y; // camera horizontal angle
+                const yaw     = getCameraYaw();
 
                 // Only send if something changed (don't spam the server).
                 if (
@@ -584,6 +663,145 @@
 
             // Send movement input every 50ms (20 times per second).
             setInterval(sendMovementInput, 50);
+
+            // ================================================================
+            // FLOATING CHAT SYSTEM (THREE.JS SPRITES)
+            // ================================================================
+
+            // Local player's typing sprite (visible while typing).
+            let localChatSprite = null;
+
+            // Array of released (floating-up, fading) chat sprites.
+            const releasedChatSprites = [];
+
+            // Creates an outlined text sprite.
+            function createTextSprite(text, maxWidth) {
+                const cnv = document.createElement('canvas');
+                const ctx = cnv.getContext('2d');
+                const fontSize = 48;
+                const padding = 16;
+                ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+
+                // Measure text and size canvas.
+                const measured = ctx.measureText(text || ' ');
+                cnv.width  = Math.min(measured.width + padding * 2, maxWidth || 1024);
+                cnv.height = fontSize + padding * 2;
+
+                // Re-set font after canvas resize.
+                ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'center';
+
+                const cx = cnv.width / 2;
+                const cy = cnv.height / 2;
+
+                // Black outline.
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = '#000';
+                ctx.strokeText(text || ' ', cx, cy, cnv.width - padding);
+
+                // White fill.
+                ctx.fillStyle = '#fff';
+                ctx.fillText(text || ' ', cx, cy, cnv.width - padding);
+
+                const texture = new THREE.CanvasTexture(cnv);
+                texture.needsUpdate = true;
+
+                const spriteMat = new THREE.SpriteMaterial({
+                    map: texture,
+                    transparent: true,
+                    depthTest: false,
+                });
+                const sprite = new THREE.Sprite(spriteMat);
+
+                // Scale to reasonable world size.
+                const aspect = cnv.width / cnv.height;
+                const height = 0.5;
+                sprite.scale.set(height * aspect, height, 1);
+
+                return sprite;
+            }
+
+            function updateLocalChatSprite() {
+                // Remove old sprite.
+                if (localChatSprite) {
+                    scene.remove(localChatSprite);
+                    localChatSprite.material.map.dispose();
+                    localChatSprite.material.dispose();
+                    localChatSprite = null;
+                }
+
+                if (!chatMode || chatText.length === 0) return;
+
+                localChatSprite = createTextSprite(chatText, 1024);
+                scene.add(localChatSprite);
+                // Position will be updated each frame in animate().
+            }
+
+            function createReleasedChatSprite(text, worldX, worldY, worldZ) {
+                if (!text || text.trim().length === 0) return;
+                const sprite = createTextSprite(text, 1024);
+                sprite.position.set(worldX, worldY, worldZ);
+                scene.add(sprite);
+                releasedChatSprites.push({
+                    sprite,
+                    age: 0,
+                    maxAge: 4.0, // seconds before fully faded
+                    floatSpeed: 0.3, // units per second upward
+                });
+            }
+
+            function releaseChat() {
+                if (chatText.trim().length > 0) {
+                    // Send chat message to server.
+                    socket.emit('chat:message', { message: chatText.trim() });
+
+                    // Use the typing sprite's CURRENT world position so there's
+                    // no visible jump when it transitions to the released state.
+                    let releaseX = localPos.x + 0.8;
+                    let releaseY = localPos.y + 0.5;
+                    let releaseZ = localPos.z;
+                    if (localChatSprite) {
+                        releaseX = localChatSprite.position.x;
+                        releaseY = localChatSprite.position.y;
+                        releaseZ = localChatSprite.position.z;
+                    }
+
+                    createReleasedChatSprite(chatText.trim(), releaseX, releaseY, releaseZ);
+                }
+                chatText = '';
+                chatMode = false;
+                // Remove typing sprite.
+                if (localChatSprite) {
+                    scene.remove(localChatSprite);
+                    localChatSprite.material.map.dispose();
+                    localChatSprite.material.dispose();
+                    localChatSprite = null;
+                }
+            }
+
+            // Handle real-time typing from remote players.
+            socket.on('chat:typing', (data) => {
+                const remote = remotePlayers.get(data.playerId);
+                if (!remote) return;
+                // Remove old typing sprite.
+                if (remote.chatSprite) {
+                    scene.remove(remote.chatSprite);
+                    remote.chatSprite.material.map.dispose();
+                    remote.chatSprite.material.dispose();
+                    remote.chatSprite = null;
+                }
+                if (data.text && data.text.length > 0) {
+                    remote.chatSprite = createTextSprite(data.text, 1024);
+                    // Position it above the remote player.
+                    remote.chatSprite.position.set(
+                        remote.mesh.position.x + 0.8,
+                        remote.mesh.position.y + 1.3,
+                        remote.mesh.position.z
+                    );
+                    scene.add(remote.chatSprite);
+                }
+            });
 
             // ================================================================
             // BLOCK INTERACTION (RAYCASTING)
@@ -618,7 +836,7 @@
 
             // Left-click: remove the block you're looking at.
             document.addEventListener('mousedown', (e) => {
-                if (!controls.isLocked) return;
+                if (!pointerLocked || chatMode) return;
                 if (e.button !== 0) return; // only left button
 
                 const hit = getTargetBlock();
@@ -633,15 +851,14 @@
             // Right-click: place a block adjacent to the face you're looking at.
             document.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                if (!controls.isLocked) return;
+                if (!pointerLocked || chatMode) return;
 
                 const hit = getTargetBlock();
                 if (!hit) return;
 
                 // The face normal tells us WHICH face we're pointing at.
-                // We place the new block one step in that direction.
                 const normal = hit.face.normal.clone();
-                normal.transformDirection(hit.object.matrixWorld); // world space normal
+                normal.transformDirection(hit.object.matrixWorld);
 
                 const { x, y, z } = hit.object.userData;
                 const nx = Math.round(x + normal.x);
@@ -649,10 +866,9 @@
                 const nz = Math.round(z + normal.z);
 
                 // Don't place a block inside the player.
-                const camPos = camera.position;
-                if (Math.abs(camPos.x - nx) < 0.6 &&
-                    Math.abs(camPos.y - ny) < 1.2 &&
-                    Math.abs(camPos.z - nz) < 0.6) {
+                if (Math.abs(localPos.x - nx) < 0.6 &&
+                    Math.abs(localPos.y - ny) < 1.2 &&
+                    Math.abs(localPos.z - nz) < 0.6) {
                     return;
                 }
 
@@ -682,18 +898,20 @@
                 // --- LOCAL PREDICTION ---
                 // We predict movement locally so the game feels instant.
                 // The server position is used to correct drift.
-                if (controls.isLocked) {
+                if (pointerLocked && !chatMode) {
                     const speed = 8;
                     const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
                     const strafe  = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
 
                     if (forward !== 0 || strafe !== 0) {
-                        const yaw    = controls.getObject().rotation.y;
+                        // Use the LAST SENT yaw (same value the server uses)
+                        // so client prediction matches server exactly.
+                        const yaw    = lastSentInput.yaw;
                         const sinYaw = Math.sin(yaw);
                         const cosYaw = Math.cos(yaw);
 
-                        let dx = sinYaw * forward + cosYaw * strafe;
-                        let dz = cosYaw * forward - sinYaw * strafe;
+                        let dx = -sinYaw * forward + cosYaw * strafe;
+                        let dz = -cosYaw * forward - sinYaw * strafe;
 
                         const mag = Math.hypot(dx, dz);
                         if (mag > 1) { dx /= mag; dz /= mag; }
@@ -719,9 +937,40 @@
                         localPos.x += errX * Math.min(1, 5 * dt);
                         localPos.z += errZ * Math.min(1, 5 * dt);
                     }
+                }
 
-                    // Apply to camera.
-                    camera.position.set(localPos.x, localPos.y, localPos.z);
+                // --- UPDATE THIRD-PERSON CAMERA ---
+                updateCamera();
+
+                // --- POSITION LOCAL CHAT SPRITE ---
+                if (localChatSprite) {
+                    // Float to the right of the player's head.
+                    localChatSprite.position.set(
+                        localPos.x + 0.8,
+                        localPos.y + 0.5,
+                        localPos.z
+                    );
+                }
+
+                // --- ANIMATE RELEASED CHAT SPRITES ---
+                for (let i = releasedChatSprites.length - 1; i >= 0; i--) {
+                    const rc = releasedChatSprites[i];
+                    rc.age += dt;
+                    // Float upward.
+                    rc.sprite.position.y += rc.floatSpeed * dt;
+                    // Fade out in the second half of life.
+                    const fadeStart = rc.maxAge * 0.4;
+                    if (rc.age > fadeStart) {
+                        const fadeProgress = (rc.age - fadeStart) / (rc.maxAge - fadeStart);
+                        rc.sprite.material.opacity = Math.max(0, 1 - fadeProgress);
+                    }
+                    // Remove when fully faded.
+                    if (rc.age >= rc.maxAge) {
+                        scene.remove(rc.sprite);
+                        rc.sprite.material.map.dispose();
+                        rc.sprite.material.dispose();
+                        releasedChatSprites.splice(i, 1);
+                    }
                 }
 
                 // --- INTERPOLATE REMOTE PLAYERS ---
@@ -740,51 +989,30 @@
                         remote.mesh.position.y += rdy * lerp;
                         remote.mesh.position.z += rdz * lerp;
                     }
+
+                    // Smoothly rotate remote player to face their movement heading.
+                    if (typeof remote.targetYaw === 'number') {
+                        remote.mesh.rotation.y = remote.targetYaw;
+                    }
+
+                    // Update remote chat sprite position.
+                    if (remote.chatSprite) {
+                        remote.chatSprite.position.set(
+                            remote.mesh.position.x + 0.8,
+                            remote.mesh.position.y + 1.3,
+                            remote.mesh.position.z
+                        );
+                    }
                 }
 
                 // --- UPDATE HUD COORDS ---
-                const p = camera.position;
                 document.getElementById('hud-coords').textContent =
-                    `x: ${p.x.toFixed(1)} | y: ${p.y.toFixed(1)} | z: ${p.z.toFixed(1)}`;
+                    `x: ${localPos.x.toFixed(1)} | y: ${localPos.y.toFixed(1)} | z: ${localPos.z.toFixed(1)}`;
 
                 renderer.render(scene, camera);
             }
 
             animate();
-
-            // ================================================================
-            // CHAT
-            // ================================================================
-
-            const chatMessages = document.getElementById('chat-messages');
-            const chatForm     = document.getElementById('chat-form');
-            const chatInput    = document.getElementById('chat-input');
-
-            function addChatMessage(text, cssClass = 'other') {
-                const div = document.createElement('div');
-                div.textContent = text;
-                if (cssClass !== 'other') div.classList.add(cssClass);
-                chatMessages.appendChild(div);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
-
-            chatForm.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const msg = chatInput.value.trim();
-                if (!msg || !socket.connected) return;
-                socket.emit('chat:message', { message: msg });
-                chatInput.value = '';
-                chatInput.blur();
-                controls.lock(); // re-lock after chatting
-            });
-
-            // Press Enter to focus chat.
-            window.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && controls.isLocked) {
-                    controls.unlock();
-                    chatInput.focus();
-                }
-            });
 
             // ================================================================
             // UTILITY

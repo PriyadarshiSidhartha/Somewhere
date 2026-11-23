@@ -267,7 +267,20 @@ io.on("connection", async (socket) => {
         // Broadcast to everyone (including sender).
         io.emit("chat:message", chatPayload);
 
+        // Clear any typing indicator for this player.
+        socket.broadcast.emit("chat:typing", { playerId: player.id, text: "" });
+
         console.log(`[Chat] ${player.name}: ${message}`);
+    });
+
+    // Real-time typing broadcast (so others see text as you type).
+    socket.on("chat:typing", (data) => {
+        if (!data || typeof data.text !== "string") return;
+        const text = data.text.slice(0, 100); // cap at max length
+        socket.broadcast.emit("chat:typing", {
+            playerId: player.id,
+            text,
+        });
     });
 
     // --------------------------------------------------

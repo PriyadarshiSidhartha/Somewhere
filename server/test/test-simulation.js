@@ -64,13 +64,14 @@ console.log("✓ Input validation verified.");
 // TEST 5: Movement actually moves the player
 // updatePlayerPosition caps delta time at 0.1s internally, so we call it 10 times
 // to simulate 1 real second (10 × 0.1s = 1s).
+// Three.js convention: yaw=0 faces -Z direction, so forward goes along -Z.
 const pMove = createPlayer("p-move", "Mover", { x: 0, y: 2.5, z: 0 });
-// Face forward (yaw=0 → moving forward goes along +Z axis)
+// Face forward (yaw=0 → moving forward goes along -Z axis in Three.js)
 setPlayerMovementInput(pMove, { forward: 1, strafe: 0, yaw: 0 });
 // Simulate 10 ticks of 0.1s each = 1 second total
 for (let i = 0; i < 10; i++) updatePlayerPosition(pMove, 0.1);
-// Should have moved moveSpeed * 1.0 units along +Z
-const expectedZ = WORLD_CONFIG.moveSpeed * 1.0;
+// Should have moved moveSpeed * 1.0 units along -Z
+const expectedZ = -WORLD_CONFIG.moveSpeed * 1.0;
 assert(
     Math.abs(pMove.position.z - expectedZ) < 0.01,
     `Expected z≈${expectedZ}, got ${pMove.position.z}`
@@ -80,7 +81,8 @@ assert.strictEqual(pMove.position.y, WORLD_CONFIG.defaultY, "Y must stay fixed (
 console.log(`✓ Forward movement: moved ${pMove.position.z.toFixed(2)} units in z in 1s.`);
 
 // TEST 6: World XZ boundary clamping
-const pClamp = createPlayer("p-clamp", "Clamp", { x: 29, y: 2.5, z: 29 });
+// At yaw=0 (facing -Z), strafe right goes in +X direction.
+const pClamp = createPlayer("p-clamp", "Clamp", { x: 29, y: 2.5, z: 0 });
 setPlayerMovementInput(pClamp, { forward: 0, strafe: 1, yaw: 0 }); // strafe right → +X direction with yaw=0
 for (let i = 0; i < 300; i++) {
     updatePlayerPosition(pClamp, 1 / 30);
