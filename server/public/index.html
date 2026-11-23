@@ -5,16 +5,40 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Somewhere</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Pixel&family=Jersey+15&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Geist+Pixel&family=Jersey+15&family=Playwrite+AU+SA+Guides&display=swap"
+        rel="stylesheet">
     <style>
+        :root {
+            /* ============================================================
+               HUD UI FONT CONFIGURATION
+               Change this CSS variable to customize the font for all HUD
+               panels, buttons, inputs, labels, and badges.
+               ============================================================ */
+            --hud-font-family: 'Geist Pixel', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
+        body,
+        input,
+        button,
+        select,
+        textarea {
+            font-family: var(--hud-font-family);
+        }
+
         body {
             background: #1a1a2e;
-            font-family: 'Segoe UI', sans-serif;
             color: #eee;
             overflow: hidden;
         }
@@ -246,6 +270,7 @@
         #profile-expanded::-webkit-scrollbar {
             width: 4px;
         }
+
         #profile-expanded::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 4px;
@@ -290,6 +315,7 @@
             border: 1px solid rgba(255, 255, 255, 0.3);
             color: #fff;
         }
+
         .btn-primary:hover {
             background: rgba(255, 255, 255, 0.3);
         }
@@ -299,6 +325,7 @@
             border: 1px solid rgba(255, 255, 255, 0.14);
             color: #d1d5db;
         }
+
         .btn-secondary:hover {
             background: rgba(255, 255, 255, 0.16);
         }
@@ -312,6 +339,7 @@
             opacity: 0.7;
             transition: opacity 0.15s, transform 0.15s;
         }
+
         .btn-icon:hover {
             opacity: 1;
             transform: scale(1.08);
@@ -343,6 +371,7 @@
             outline: none;
             font-family: inherit;
         }
+
         .username-edit-row input:focus {
             border-color: rgba(255, 255, 255, 0.5);
         }
@@ -449,6 +478,7 @@
         .friends-list::-webkit-scrollbar {
             width: 3px;
         }
+
         .friends-list::-webkit-scrollbar-thumb {
             background: rgba(255, 255, 255, 0.2);
             border-radius: 3px;
@@ -490,9 +520,11 @@
             border-radius: 50%;
             border: 1.5px solid #16161a;
         }
+
         .status-dot.online {
             background: #10b981;
         }
+
         .status-dot.offline {
             background: #6b7280;
         }
@@ -544,6 +576,7 @@
             cursor: pointer;
             transition: all 0.15s;
         }
+
         .btn-ping:hover {
             background: rgba(255, 255, 255, 0.22);
             color: #ffffff;
@@ -574,6 +607,7 @@
             transition: opacity 0.3s, transform 0.3s;
             z-index: 100;
         }
+
         #game-toast.show {
             opacity: 1;
             transform: translateY(0);
@@ -788,7 +822,9 @@
                         <div class="user-info-text">
                             <div class="user-name" id="hud-name">-</div>
                         </div>
-                        <svg class="chevron-icon" id="profile-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <svg class="chevron-icon" id="profile-chevron" width="14" height="14" viewBox="0 0 24 24"
+                            fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                            stroke-linejoin="round">
                             <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
                     </div>
@@ -800,11 +836,13 @@
                             <div class="expanded-label">PROFILE PICTURE</div>
                             <div class="profile-photo-row">
                                 <div class="user-avatar-wrap small">
-                                    <img id="expanded-avatar-img" class="user-avatar small" src="" alt="" style="display:none;" />
+                                    <img id="expanded-avatar-img" class="user-avatar small" src="" alt=""
+                                        style="display:none;" />
                                     <div id="expanded-avatar-placeholder" class="user-avatar-placeholder small">👤</div>
                                 </div>
                                 <button id="btn-edit-avatar" class="btn-icon" title="Change photo">✏️</button>
-                                <input type="file" id="avatar-file-input" accept="image/png,image/jpeg,image/webp" style="display:none;" />
+                                <input type="file" id="avatar-file-input" accept="image/png,image/jpeg,image/webp"
+                                    style="display:none;" />
                             </div>
                         </div>
 
@@ -816,7 +854,8 @@
                                 <button id="btn-edit-username" class="btn-icon" title="Edit username">✏️</button>
                             </div>
                             <div id="username-edit-row" class="username-edit-row" style="display:none;">
-                                <input type="text" id="username-input" maxlength="20" placeholder="New username..." spellcheck="false" autocomplete="off" />
+                                <input type="text" id="username-input" maxlength="20" placeholder="New username..."
+                                    spellcheck="false" autocomplete="off" />
                                 <div class="username-edit-actions">
                                     <button id="btn-save-username" class="btn-primary btn-sm">Save</button>
                                     <button id="btn-cancel-username" class="btn-secondary btn-sm">Cancel</button>
@@ -898,6 +937,12 @@
         const CAMERA_MIN_HEIGHT = 0.3;      // Minimum camera height above ground (avoid going underground)
 
         // --- Floating Chat Text ---
+        // ================================================================
+        // CHAT FONT CONFIGURATION
+        // Change this constant to customize the font family for 3D floating
+        // in-world speech bubbles/canvas sprites above player heads.
+        // ================================================================
+        const CHAT_FONT_FAMILY = "'Playwrite AU SA Guides', 'Roboto, 'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif";
         const CHAT_MAX_LENGTH = 100;   // Max characters before auto-release
         const CHAT_OFFSET_X = 0.0;  // Text offset right of player (world units)
         const CHAT_OFFSET_Y = 0.1;  // Text offset above player pivot (world units)
@@ -1588,7 +1633,7 @@
                 serverPos.y = data.player.position.y;
                 serverPos.z = data.player.position.z;
                 console.log('Welcome!', data.player.name, 'at', data.player.position);
-                
+
                 if (data.worldName) {
                     const el = document.getElementById('hud-world-name');
                     if (el) el.textContent = data.worldName;
@@ -1857,7 +1902,7 @@
                 const padding = 16;
                 const maxCanvasWidth = maxWidth || CHAT_WRAP_WIDTH;
 
-                ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+                ctx.font = `bold ${fontSize}px ${CHAT_FONT_FAMILY}`;
 
                 const maxTextWidth = maxCanvasWidth - padding * 2;
 
@@ -1912,7 +1957,7 @@
                 cnv.height = lineHeight * lines.length + padding * 2;
 
                 // Re-set font after canvas resize.
-                ctx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+                ctx.font = `bold ${fontSize}px ${CHAT_FONT_FAMILY}`;
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'center';
 
@@ -2202,15 +2247,19 @@
             raycaster.far = 30;
             const PLAYER_REACH = 7.5; // Max interaction distance from player
 
-            // Subtle wireframe box that highlights the block currently targeted
-            const highlightGeo = new THREE.BoxGeometry(1.005, 1.005, 1.005);
-            const highlightMat = new THREE.MeshBasicMaterial({
+            // Highlight box that displays a clean, bright white outer silhouette
+            // around the currently targeted block.
+            // Uses EdgesGeometry to extract only the 12 outer box edges (eliminating all diagonal face/triangle lines)
+            // with solid bright white color and depth testing so back edges inside the block stay hidden.
+            const highlightGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004));
+            const highlightMat = new THREE.LineBasicMaterial({
                 color: 0xffffff,
-                wireframe: true,
-                transparent: true,
-                opacity: 0.6,
+                transparent: false,
+                depthTest: true,
+                depthWrite: false,
             });
-            const highlightBox = new THREE.Mesh(highlightGeo, highlightMat);
+            const highlightBox = new THREE.LineSegments(highlightGeo, highlightMat);
+            highlightBox.renderOrder = 10;
             highlightBox.visible = false;
             scene.add(highlightBox);
 
