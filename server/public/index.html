@@ -924,6 +924,9 @@
     <!-- Socket.IO client library (served by our server) -->
     <script src="/socket.io/socket.io.js"></script>
 
+    <!-- Shared physics engine (same code runs on server) -->
+    <script src="/shared/physics.js"></script>
+
     <!-- Three.js from CDN using ES module importmap -->
     <script type="importmap">
     {
@@ -1137,8 +1140,9 @@
 
             function updateCamera() {
                 // ---- Player mesh ----
-                // Player feet are at localPos.y - 0.9 (half the 1.8-tall box).
-                const feetY = localPos.y - 0.9;
+                // localPos.y is the capsule CENTER. Feet are at center - halfHeight.
+                const halfH = window.Physics.capsuleHalfHeight(window.Physics.PHYSICS_CONFIG);
+                const feetY = localPos.y - halfH;
                 localPlayerMesh.position.set(localPos.x, feetY, localPos.z);
                 localPlayerMesh.rotation.y = cameraYaw;
 
@@ -1243,6 +1247,20 @@
             }
 
             // ================================================================
+            // CLIENT-SIDE COLLISION QUERY (mirrors worldState.isSolidAt)
+            // ================================================================
+
+            // The physics engine needs to know which blocks are solid.
+            // On the client, we query the same blockMeshes map that
+            // drives rendering. This ensures collision always matches
+            // what the player sees.
+            function clientIsSolidAt(x, y, z) {
+                return blockMeshes.has(blockKey(
+                    Math.floor(x), Math.floor(y), Math.floor(z)
+                ));
+            }
+
+            // ================================================================
             // REMOTE PLAYER MESHES
             // ================================================================
 
@@ -1255,9 +1273,11 @@
             function addRemotePlayer(playerData) {
                 if (remotePlayers.has(playerData.id)) return;
                 const mesh = new THREE.Mesh(remoteGeometry, remoteMaterial);
+                // Position is capsule center; convert to feet for mesh.
+                const rHH = window.Physics.capsuleHalfHeight(window.Physics.PHYSICS_CONFIG);
                 mesh.position.set(
                     playerData.position.x,
-                    playerData.position.y - 0.9, // anchor feet to ground
+                    playerData.position.y - rHH, // capsule center → feet
                     playerData.position.z
                 );
                 mesh.castShadow = true;
@@ -1654,12 +1674,15 @@
             socket.on('welcome', (data) => {
                 mySocketId = socket.id;
                 // Snap to server-authoritative position.
-                localPos.x = data.player.position.x;
-                localPos.y = data.player.position.y;
-                localPos.z = data.player.position.z;
-                serverPos.x = data.player.position.x;
-                serverPos.y = data.player.position.y;
-                serverPos.z = data.player.position.z;
+                serverState = createPhysicsState(
+                    data.player.position.x,
+                    data.player.position.y,
+                    data.player.position.z
+                );
+                predictedState = clonePhysicsState(serverState);
+                smoothOffsetX = 0; smoothOffsetY = 0; smoothOffsetZ = 0;
+                inputHistory.length = 0;
+                lastAckedSeq = -1;
                 console.log('Welcome!', data.player.name, 'at', data.player.position);
 
                 if (data.worldName) {
@@ -1707,19 +1730,64 @@
                 updateHudPlayers();
             });
 
-            // --- Movement snapshots (20 per second) ---
+            // --- Movement snapshots (server-authoritative physics) ---
             socket.on('movement_snapshot', (data) => {
                 for (const update of data.players) {
                     if (update.id === mySocketId) {
-                        // Reconcile server position with our local prediction.
-                        serverPos.x = update.position.x;
-                        serverPos.y = update.position.y;
-                        serverPos.z = update.position.z;
+                        // --- SERVER RECONCILIATION ---
+                        // 1. Store the authoritative state.
+                        serverState.position.x = update.position.x;
+                        serverState.position.y = update.position.y;
+                        serverState.position.z = update.position.z;
+                        serverState.velocity.x = update.velocity.x;
+                        serverState.velocity.y = update.velocity.y;
+                        serverState.velocity.z = update.velocity.z;
+                        serverState.grounded = update.grounded;
+
+                        // 2. Record the old predicted position for smooth correction.
+                        const oldPredX = predictedState.position.x;
+                        const oldPredY = predictedState.position.y;
+                        const oldPredZ = predictedState.position.z;
+
+                        // 3. Start from authoritative state.
+                        predictedState = clonePhysicsState(serverState);
+                        lastAckedSeq = update.lastProcessedSeq;
+
+                        // 4. Discard acknowledged inputs, replay unacknowledged ones.
+                        while (inputHistory.length > 0 && inputHistory[0].seq <= lastAckedSeq) {
+                            inputHistory.shift();
+                        }
+
+                        // 5. Replay remaining inputs to reconstruct predicted state.
+                        let replayTime = clientSimTime - inputHistory.length * PHYSICS_DT;
+                        for (const inp of inputHistory) {
+                            replayTime += PHYSICS_DT;
+                            physicsStep(predictedState, inp, clientIsSolidAt, PC, PHYSICS_DT, replayTime);
+                        }
+
+                        // 6. Compute visual correction offset (smooth, don't snap).
+                        const newPredX = predictedState.position.x;
+                        const newPredY = predictedState.position.y;
+                        const newPredZ = predictedState.position.z;
+
+                        // Add the difference between old and new prediction to smooth offset.
+                        smoothOffsetX += oldPredX - newPredX;
+                        smoothOffsetY += oldPredY - newPredY;
+                        smoothOffsetZ += oldPredZ - newPredZ;
+
+                        // If correction is very large, snap immediately.
+                        const corrDist = Math.hypot(smoothOffsetX, smoothOffsetY, smoothOffsetZ);
+                        if (corrDist > 5) {
+                            smoothOffsetX = 0;
+                            smoothOffsetY = 0;
+                            smoothOffsetZ = 0;
+                        }
                     } else {
                         const remote = remotePlayers.get(update.id);
                         if (remote) {
+                            // Store raw capsule center position for interpolation.
                             remote.targetPos.x = update.position.x;
-                            remote.targetPos.y = update.position.y - 0.9;
+                            remote.targetPos.y = update.position.y;
                             remote.targetPos.z = update.position.z;
                             if (typeof update.yaw === 'number') {
                                 remote.targetYaw = update.yaw;
@@ -1758,18 +1826,33 @@
             });
 
             // ================================================================
-            // MOVEMENT INPUT
+            // MOVEMENT INPUT + CLIENT-SIDE PREDICTION
             // ================================================================
 
-            const keys = { w: false, a: false, s: false, d: false };
-            let lastSentInput = { forward: 0, strafe: 0, yaw: 0 };
+            // Access the shared physics engine loaded via <script>.
+            const { PHYSICS_CONFIG: PC, PHYSICS_DT, physicsStep,
+                    createPhysicsState, clonePhysicsState } = window.Physics;
 
-            // The server-authoritative position for reconciliation.
-            const serverPos = {
-                x: user.position.x,
-                y: user.position.y,
-                z: user.position.z,
-            };
+            const keys = { w: false, a: false, s: false, d: false };
+            let jumpPressed = false;
+
+            // --- Client prediction state ---
+            // The authoritative state received from the server.
+            let serverState = createPhysicsState(
+                user.position.x, user.position.y, user.position.z
+            );
+            // The predicted state used for rendering.
+            let predictedState = clonePhysicsState(serverState);
+            // Input history for reconciliation (ring buffer of recent inputs).
+            const inputHistory = [];
+            const MAX_INPUT_HISTORY = 300; // ~5 seconds at 60 inputs/sec
+            let inputSeq = 0;
+            let lastAckedSeq = -1;
+            // Client-side simulation time (tracks physics sub-steps).
+            let clientSimTime = 0;
+            // Visual smoothing offset (for smooth corrections without snapping).
+            let smoothOffsetX = 0, smoothOffsetY = 0, smoothOffsetZ = 0;
+            const SMOOTH_RATE = 12; // how fast visual catches up (per second)
 
             // ---- CHAT MODE ----
             // When chatMode is true, all alphabet/gameplay keys are disabled.
@@ -1856,6 +1939,7 @@
 
                 const k = e.key.toLowerCase();
                 if (k in keys) { keys[k] = true; e.preventDefault(); }
+                if (e.code === 'Space') { jumpPressed = true; e.preventDefault(); }
             });
 
             window.addEventListener('keyup', (e) => {
@@ -1866,6 +1950,7 @@
                 if (chatMode || isTyping) return; // ignore key-ups during typing
                 const k = e.key.toLowerCase();
                 if (k in keys) keys[k] = false;
+                if (e.code === 'Space') jumpPressed = false;
             });
 
             function getCameraYaw() {
@@ -1878,20 +1963,22 @@
                 const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
                 const strafe = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
                 const yaw = getCameraYaw();
+                const jump = jumpPressed;
+                const seq = inputSeq++;
 
-                // Only send if something changed (don't spam the server).
-                if (
-                    forward !== lastSentInput.forward ||
-                    strafe !== lastSentInput.strafe ||
-                    Math.abs(yaw - lastSentInput.yaw) > 0.01
-                ) {
-                    lastSentInput = { forward, strafe, yaw };
-                    socket.emit('movement_input', { forward, strafe, yaw });
+                const inputPacket = { forward, strafe, yaw, jump, seq };
+
+                // Store in history for reconciliation replay.
+                inputHistory.push(inputPacket);
+                if (inputHistory.length > MAX_INPUT_HISTORY) {
+                    inputHistory.shift();
                 }
+
+                socket.emit('movement_input', inputPacket);
             }
 
-            // Send movement input every 50ms (20 times per second).
-            setInterval(sendMovementInput, 50);
+            // Send movement input at the physics tick rate for determinism.
+            setInterval(sendMovementInput, 1000 / PC.physicsTickRate);
 
             // ================================================================
             // FLOATING CHAT SYSTEM (THREE.JS SPRITES)
@@ -2383,10 +2470,12 @@
                     const nz = Math.round(z + normal.z);
 
                     // Don't place a block inside the player character
-                    const feetY = localPos.y - 0.9;
-                    const headY = localPos.y + 0.9;
-                    if (Math.abs(localPos.x - nx) < 0.65 &&
-                        Math.abs(localPos.z - nz) < 0.65 &&
+                    const _hh = window.Physics.capsuleHalfHeight(window.Physics.PHYSICS_CONFIG);
+                    const _r = window.Physics.PHYSICS_CONFIG.capsuleRadius;
+                    const feetY = localPos.y - _hh;
+                    const headY = localPos.y + _hh;
+                    if (Math.abs(localPos.x - nx) < (0.5 + _r) &&
+                        Math.abs(localPos.z - nz) < (0.5 + _r) &&
                         ny >= Math.floor(feetY) && ny <= Math.ceil(headY)) {
                         return;
                     }
@@ -2404,66 +2493,62 @@
             });
 
             // ================================================================
-            // RENDER LOOP
+            // RENDER LOOP (with client-side physics prediction)
             // ================================================================
 
             const clock = new THREE.Clock();
+            const capsuleHH = window.Physics.capsuleHalfHeight(PC);
 
-            // Local position prediction (what we display while waiting for server).
+            // localPos is derived from predictedState + smoothing offset.
+            // It's the position used for rendering (camera, mesh, chat sprites).
+            // This is the capsule CENTER, same as the physics position.
             const localPos = {
                 x: user.position.x,
                 y: user.position.y,
                 z: user.position.z,
             };
 
+            // Client-side physics accumulator for frame-rate-independent stepping.
+            let clientAccumulator = 0;
+
             function animate() {
                 requestAnimationFrame(animate);
 
                 const dt = clock.getDelta();
 
-                // --- LOCAL PREDICTION ---
-                // We predict movement locally so the game feels instant.
-                // The server position is used to correct drift.
-                if (pointerLocked) {
-                    const speed = 8;
-                    const forward = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
-                    const strafe = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+                // --- CLIENT-SIDE PHYSICS PREDICTION ---
+                // Run the same physics step locally so movement feels instant.
+                // This runs at a fixed timestep, independent of frame rate.
+                clientAccumulator += dt;
+                if (clientAccumulator > 0.25) clientAccumulator = 0.25; // cap spiral of death
 
-                    if (forward !== 0 || strafe !== 0) {
-                        // Use the LAST SENT yaw (same value the server uses)
-                        // so client prediction matches server exactly.
-                        const yaw = lastSentInput.yaw;
-                        const sinYaw = Math.sin(yaw);
-                        const cosYaw = Math.cos(yaw);
+                while (clientAccumulator >= PHYSICS_DT) {
+                    clientAccumulator -= PHYSICS_DT;
+                    clientSimTime += PHYSICS_DT;
 
-                        let dx = -sinYaw * forward + cosYaw * strafe;
-                        let dz = -cosYaw * forward - sinYaw * strafe;
+                    // Build the current input from key state.
+                    const currentInput = {
+                        forward: (keys.w ? 1 : 0) - (keys.s ? 1 : 0),
+                        strafe:  (keys.d ? 1 : 0) - (keys.a ? 1 : 0),
+                        yaw:     cameraYaw,
+                        jump:    jumpPressed,
+                    };
 
-                        const mag = Math.hypot(dx, dz);
-                        if (mag > 1) { dx /= mag; dz /= mag; }
-
-                        localPos.x += dx * speed * dt;
-                        localPos.z += dz * speed * dt;
-
-                        // Clamp to world bounds.
-                        localPos.x = Math.max(-30, Math.min(30, localPos.x));
-                        localPos.z = Math.max(-30, Math.min(30, localPos.z));
-                    }
-
-                    // Server reconciliation: smoothly correct toward server position.
-                    const errX = serverPos.x - localPos.x;
-                    const errZ = serverPos.z - localPos.z;
-                    const dist = Math.hypot(errX, errZ);
-                    if (dist > 10) {
-                        // Big drift → snap.
-                        localPos.x = serverPos.x;
-                        localPos.z = serverPos.z;
-                    } else if (dist > 0.1) {
-                        // Small drift → gently pull.
-                        localPos.x += errX * Math.min(1, 5 * dt);
-                        localPos.z += errZ * Math.min(1, 5 * dt);
-                    }
+                    physicsStep(predictedState, currentInput, clientIsSolidAt,
+                                PC, PHYSICS_DT, clientSimTime);
                 }
+
+                // --- SMOOTH VISUAL CORRECTION ---
+                // Decay the smoothing offset so visual catches up to prediction.
+                const decay = 1 - Math.exp(-SMOOTH_RATE * dt);
+                smoothOffsetX *= (1 - decay);
+                smoothOffsetY *= (1 - decay);
+                smoothOffsetZ *= (1 - decay);
+
+                // Final render position = predicted + smooth offset.
+                localPos.x = predictedState.position.x + smoothOffsetX;
+                localPos.y = predictedState.position.y + smoothOffsetY;
+                localPos.z = predictedState.position.z + smoothOffsetZ;
 
                 // --- UPDATE THIRD-PERSON CAMERA ---
                 updateCamera();
@@ -2513,15 +2598,19 @@
                 }
 
                 // --- INTERPOLATE REMOTE PLAYERS ---
+                // Remote players use snapshot interpolation, NOT local prediction.
+                // targetPos is the capsule CENTER from server snapshots.
                 for (const [, remote] of remotePlayers) {
+                    // Convert capsule center to mesh position (feet).
+                    const targetMeshY = remote.targetPos.y - capsuleHH;
                     const rdx = remote.targetPos.x - remote.mesh.position.x;
-                    const rdy = remote.targetPos.y - remote.mesh.position.y;
+                    const rdy = targetMeshY - remote.mesh.position.y;
                     const rdz = remote.targetPos.z - remote.mesh.position.z;
                     const dist = Math.hypot(rdx, rdy, rdz);
 
                     if (dist > 10) {
                         // Snap on huge jumps.
-                        remote.mesh.position.set(remote.targetPos.x, remote.targetPos.y, remote.targetPos.z);
+                        remote.mesh.position.set(remote.targetPos.x, targetMeshY, remote.targetPos.z);
                     } else if (dist > 0.01) {
                         const lerp = Math.min(1, 1 - Math.exp(-10 * dt));
                         remote.mesh.position.x += rdx * lerp;
@@ -2544,6 +2633,13 @@
                             remote.mesh.position.z + rOff.z
                         );
                     }
+                }
+
+                // --- UPDATE HUD ---
+                const hudCoords = document.getElementById('hud-coords');
+                if (hudCoords) {
+                    hudCoords.textContent =
+                        `x: ${localPos.x.toFixed(1)} | y: ${localPos.y.toFixed(1)} | z: ${localPos.z.toFixed(1)}`;
                 }
 
                 renderer.render(scene, camera);

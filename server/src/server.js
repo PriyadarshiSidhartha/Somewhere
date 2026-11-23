@@ -16,12 +16,14 @@ const { Server } = require("socket.io");
 const { createSessionMiddleware, mountAuthRoutes } = require("./auth");
 const {
     WORLD_CONFIG,
+    PHYSICS_CONFIG,
     createPlayer,
     getPublicPlayerState,
     setPlayerMovementInput,
     resetPlayerMovementInput,
     simulateTick,
     createSnapshot,
+    setWorldCollisionFn,
 } = require("./simulation");
 const world = require("./worldState");
 const prisma = require("./db");
@@ -48,6 +50,12 @@ app.use(passport.session());
 
 // Serve static files from /public (the Three.js frontend).
 app.use(express.static(path.join(__dirname, "../public")));
+
+// Serve shared physics.js so the client can load it.
+app.get("/shared/physics.js", (req, res) => {
+    res.type("application/javascript");
+    res.sendFile(path.join(__dirname, "physics.js"));
+});
 
 // --------------------------------------------------
 // AUTH ROUTES  (/auth/google, /auth/logout, /api/me)
@@ -408,6 +416,7 @@ io.on("connection", async (socket) => {
     socket.emit("welcome", {
         player: getPublicPlayerState(player),
         world: WORLD_CONFIG,
+        physics: PHYSICS_CONFIG,
         recentBlocks: initialRecent,
         worldName: CURRENT_WORLD_NAME,
         playerCount: players.size,
@@ -666,6 +675,9 @@ io.on("connection", async (socket) => {
 async function start() {
     // Load the block world from MongoDB (or seed it if empty).
     await world.loadWorld();
+
+    // Wire the collision function so the physics engine can query blocks.
+    setWorldCollisionFn(world.isSolidAt);
 
     httpServer.listen(PORT, () => {
         console.log(`Somewhere server running → http://localhost:${PORT}`);

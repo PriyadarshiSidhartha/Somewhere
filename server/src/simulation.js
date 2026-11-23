@@ -1,62 +1,93 @@
-// simulation.js — Server-authoritative 3D movement simulation.
+// simulation.js — Server-authoritative 3D movement simulation with physics.
 //
-// The server is the source of truth for all player positions.
-// Clients send directional input (which keys are pressed + camera yaw).
-// The server computes actual world-space velocity and updates positions.
+// The server is the source of truth for all player positions, velocities,
+// and grounded state. Clients send directional input + jump + sequence number.
+// The server runs the shared physics step (from physics.js) with collision
+// detection against the block world.
 //
-// Why server-authoritative? It prevents clients from teleporting themselves
-// or cheating by sending fake positions.
+// This module replaces the old flat-XZ movement with full 3D physics:
+//   - Acceleration / deceleration
+//   - Gravity
+//   - Jumping (with coyote time and jump buffering)
+//   - Capsule-vs-block collision
 
-// --------------------------------------------------
-// WORLD CONFIGURATION
-// --------------------------------------------------
+const {
+    PHYSICS_CONFIG,
+    PHYSICS_DT,
+    physicsStep,
+    createPhysicsState,
+    clonePhysicsState,
+    capsuleHalfHeight,
+} = require("./physics");
 
+// Re-export PHYSICS_CONFIG as WORLD_CONFIG for backwards compatibility
+// with server.js and tests that reference WORLD_CONFIG.
 const WORLD_CONFIG = {
-    moveSpeed: 8,          // units per second (feels like a walking pace)
-    simulationTickRate: 30, // 30 ticks per second (~33ms per tick)
-    snapshotRate: 20,       // 20 position broadcasts per second (50ms)
-    // XZ bounds — same as worldState.js limit (30 units from center)
-    boundXZ: 30,
-    // Y: player walks at a fixed height above the ground
-    defaultY: 2.5,
+    moveSpeed:          PHYSICS_CONFIG.moveSpeed,
+    simulationTickRate: PHYSICS_CONFIG.physicsTickRate,
+    snapshotRate:       PHYSICS_CONFIG.snapshotRate,
+    boundXZ:            PHYSICS_CONFIG.boundXZ,
+    defaultY:           5, // spawn height (high enough to fall onto terrain)
 };
 
 // --------------------------------------------------
 // PLAYER STATE
 // --------------------------------------------------
 
+// A reference to the world's isSolidAt function, set by the server at startup.
+let _worldIsSolidAt = () => false;
+
+function setWorldCollisionFn(fn) {
+    _worldIsSolidAt = fn;
+}
+
 function createPlayer(socketId, displayName, spawnPos) {
+    const spawnX = spawnPos ? spawnPos.x : 0;
+    const spawnY = spawnPos ? spawnPos.y : WORLD_CONFIG.defaultY;
+    const spawnZ = spawnPos ? spawnPos.z : 0;
+
     return {
         id: socketId,
-        // The database User ID — set after authentication.
         userId: null,
         name: displayName || `Player-${socketId.slice(0, 6)}`,
-        position: {
-            x: spawnPos ? spawnPos.x : 0,
-            y: spawnPos ? spawnPos.y : WORLD_CONFIG.defaultY,
-            z: spawnPos ? spawnPos.z : 0,
-        },
-        // Movement input: direction keys + camera yaw angle in radians.
+
+        // Physics state (position is capsule center).
+        physics: createPhysicsState(spawnX, spawnY, spawnZ),
+
+        // Convenience accessor: matches old API.
+        get position() { return this.physics.position; },
+
+        // Movement input from the client.
         input: {
-            forward: 0,  // -1 to 1 (negative = backward)
-            strafe: 0,   // -1 to 1 (negative = left)
-            yaw: 0,      // camera horizontal rotation (radians)
+            forward: 0,
+            strafe: 0,
+            yaw: 0,
+            jump: false,
         },
+
+        // Sequence number tracking for client reconciliation.
+        lastProcessedSeq: -1,
+
+        // Accumulated simulation time for this player.
+        simTime: 0,
+
+        // Accumulator for fixed-timestep sub-stepping.
+        accumulator: 0,
     };
 }
 
 // What we send to other clients — only public information.
-// Never expose internal input state.
 function getPublicPlayerState(player) {
+    const pos = player.physics.position;
     return {
         id: player.id,
         name: player.name,
         position: {
-            x: Math.round(player.position.x * 1000) / 1000,
-            y: Math.round(player.position.y * 1000) / 1000,
-            z: Math.round(player.position.z * 1000) / 1000,
+            x: Math.round(pos.x * 1000) / 1000,
+            y: Math.round(pos.y * 1000) / 1000,
+            z: Math.round(pos.z * 1000) / 1000,
         },
-        yaw: Math.round(player.input.yaw * 1000) / 1000, // for orienting other players' meshes
+        yaw: Math.round(player.input.yaw * 1000) / 1000,
     };
 }
 
@@ -67,15 +98,18 @@ function getPublicPlayerState(player) {
 function isValidMovementInput(data) {
     if (!data || typeof data !== "object") return false;
 
-    // forward/strafe must be numbers in [-1, 1]
     if (typeof data.forward !== "number" || !Number.isFinite(data.forward)) return false;
     if (typeof data.strafe !== "number" || !Number.isFinite(data.strafe)) return false;
     if (typeof data.yaw !== "number" || !Number.isFinite(data.yaw)) return false;
 
     if (data.forward < -1 || data.forward > 1) return false;
     if (data.strafe < -1 || data.strafe > 1) return false;
-    // yaw is any angle in radians — just check it's a reasonable number
     if (Math.abs(data.yaw) > 2 * Math.PI * 100) return false;
+
+    // seq must be a non-negative integer if present.
+    if (data.seq !== undefined && data.seq !== null) {
+        if (typeof data.seq !== "number" || !Number.isInteger(data.seq) || data.seq < 0) return false;
+    }
 
     return true;
 }
@@ -87,6 +121,13 @@ function setPlayerMovementInput(player, inputData) {
     player.input.forward = inputData.forward;
     player.input.strafe = inputData.strafe;
     player.input.yaw = inputData.yaw;
+    player.input.jump = !!inputData.jump;
+
+    // Track sequence number.
+    if (typeof inputData.seq === "number") {
+        player.lastProcessedSeq = inputData.seq;
+    }
+
     return true;
 }
 
@@ -94,48 +135,36 @@ function resetPlayerMovementInput(player) {
     if (player && player.input) {
         player.input.forward = 0;
         player.input.strafe = 0;
+        player.input.jump = false;
     }
 }
 
 // --------------------------------------------------
-// MOVEMENT SIMULATION
+// MOVEMENT SIMULATION (fixed timestep)
 // --------------------------------------------------
 
 function updatePlayerPosition(player, deltaTime) {
-    const { forward, strafe, yaw } = player.input;
+    // Accumulate frame time and step in fixed increments.
+    player.accumulator += deltaTime;
 
-    if (forward === 0 && strafe === 0) return;
-
-    // Decompose forward/strafe into world-space XZ velocity using the camera yaw.
-    // Three.js convention: rotation.y = 0 faces -Z direction.
-    // Forward direction = (-sinYaw, 0, -cosYaw)
-    // Right (strafe) direction = (cosYaw, 0, -sinYaw)
-    const sinYaw = Math.sin(yaw);
-    const cosYaw = Math.cos(yaw);
-
-    let dx = -sinYaw * forward + cosYaw * strafe;
-    let dz = -cosYaw * forward - sinYaw * strafe;
-
-    // Normalize diagonal movement so you don't go faster diagonally.
-    const magnitude = Math.hypot(dx, dz);
-    if (magnitude > 1) {
-        dx /= magnitude;
-        dz /= magnitude;
+    // Safety cap: prevent spiral of death if server lags.
+    if (player.accumulator > 0.25) {
+        player.accumulator = 0.25;
     }
 
-    // Cap delta time to prevent huge jumps on lag spikes.
-    const dt = Math.min(deltaTime, 0.1);
+    while (player.accumulator >= PHYSICS_DT) {
+        player.accumulator -= PHYSICS_DT;
+        player.simTime += PHYSICS_DT;
 
-    player.position.x += dx * WORLD_CONFIG.moveSpeed * dt;
-    player.position.z += dz * WORLD_CONFIG.moveSpeed * dt;
-
-    // Clamp to world XZ bounds.
-    const b = WORLD_CONFIG.boundXZ;
-    player.position.x = Math.max(-b, Math.min(b, player.position.x));
-    player.position.z = Math.max(-b, Math.min(b, player.position.z));
-
-    // Y stays fixed (no gravity/jumping in MVP).
-    player.position.y = WORLD_CONFIG.defaultY;
+        physicsStep(
+            player.physics,
+            player.input,
+            _worldIsSolidAt,
+            PHYSICS_CONFIG,
+            PHYSICS_DT,
+            player.simTime
+        );
+    }
 }
 
 function simulateTick(playersIterable, deltaTime) {
@@ -151,14 +180,23 @@ function simulateTick(playersIterable, deltaTime) {
 function createSnapshot(playersIterable) {
     const playersList = [];
     for (const player of playersIterable) {
+        const pos = player.physics.position;
+        const vel = player.physics.velocity;
         playersList.push({
             id: player.id,
             position: {
-                x: Math.round(player.position.x * 1000) / 1000,
-                y: Math.round(player.position.y * 1000) / 1000,
-                z: Math.round(player.position.z * 1000) / 1000,
+                x: Math.round(pos.x * 1000) / 1000,
+                y: Math.round(pos.y * 1000) / 1000,
+                z: Math.round(pos.z * 1000) / 1000,
+            },
+            velocity: {
+                x: Math.round(vel.x * 1000) / 1000,
+                y: Math.round(vel.y * 1000) / 1000,
+                z: Math.round(vel.z * 1000) / 1000,
             },
             yaw: Math.round(player.input.yaw * 1000) / 1000,
+            grounded: player.physics.grounded,
+            lastProcessedSeq: player.lastProcessedSeq,
         });
     }
     return { timestamp: Date.now(), players: playersList };
@@ -166,6 +204,8 @@ function createSnapshot(playersIterable) {
 
 module.exports = {
     WORLD_CONFIG,
+    PHYSICS_CONFIG,
+    PHYSICS_DT,
     createPlayer,
     getPublicPlayerState,
     isValidMovementInput,
@@ -174,4 +214,5 @@ module.exports = {
     updatePlayerPosition,
     simulateTick,
     createSnapshot,
+    setWorldCollisionFn,
 };

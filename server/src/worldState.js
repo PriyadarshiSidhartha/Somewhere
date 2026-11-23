@@ -167,6 +167,22 @@ function isValidBlockType(type) {
     return blockCatalog.isValidBlockId(type);
 }
 
+// --------------------------------------------------
+// COLLISION QUERIES (used by physics engine)
+// --------------------------------------------------
+
+// Returns true if there is a solid block at the given integer coordinates.
+// This is the bridge between the world representation and the physics engine.
+// All blocks in the world are considered solid unless we add a non-solid flag later.
+function isSolidAt(x, y, z) {
+    return blocks.has(key(Math.floor(x), Math.floor(y), Math.floor(z)));
+}
+
+// Returns the raw block at integer coordinates, or null.
+function getBlockAt(x, y, z) {
+    return blocks.get(key(x, y, z)) || null;
+}
+
 module.exports = {
     loadWorld,
     getAllBlocks,
@@ -174,4 +190,6 @@ module.exports = {
     removeBlock,
     isValidBlockCoord,
     isValidBlockType,
+    isSolidAt,
+    getBlockAt,
 };
