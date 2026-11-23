@@ -87,42 +87,504 @@
             display: none;
         }
 
-        /* HUD: player name top-left */
-        #hud {
+        /* ---- UNIFIED LEFT UI CONTAINER ---- */
+        #left-ui-container {
             position: absolute;
-            top: 12px;
-            left: 12px;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-size: 0.85rem;
+            left: 16px;
+            top: 16px;
+            bottom: 24px;
+            width: 240px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
             pointer-events: none;
+            z-index: 25;
         }
 
-        #hud .coords {
+        /* Shared styling for panels inside the left container */
+        .left-panel {
+            width: 100%;
+            background: rgba(22, 22, 26, 0.75);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.38);
+            pointer-events: auto;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        /* ---- TOP INFORMATION PANEL (WORLD + USER PROFILE) ---- */
+        #info-panel {
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: calc(100vh - 430px);
+            overflow: visible;
+        }
+
+        .world-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #ffffff;
+            line-height: 1.2;
+        }
+
+        .world-players {
+            font-size: 0.74rem;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+
+        .panel-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.08);
+            margin: 2px 0;
+        }
+
+        /* User Info Collapsed Bar */
+        #user-collapsed {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 9px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        #user-collapsed:hover {
+            background: rgba(255, 255, 255, 0.09);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .user-avatar-wrap {
+            position: relative;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1.5px solid rgba(255, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .user-avatar-wrap.small {
+            width: 28px;
+            height: 28px;
+        }
+
+        .user-avatar {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .user-avatar-placeholder {
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .user-avatar-placeholder.small {
+            font-size: 0.85rem;
+        }
+
+        .user-info-text {
+            flex-grow: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name {
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: #ffffff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .chevron-icon {
+            color: #9ca3af;
+            transition: transform 0.25s ease;
+            flex-shrink: 0;
+            display: block;
+        }
+
+        #user-section.expanded .chevron-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Profile Expanded Accordion */
+        #profile-expanded {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: max-height 0.35s ease, opacity 0.25s ease, margin 0.25s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #user-section.expanded #profile-expanded {
+            max-height: 380px;
+            opacity: 1;
+            overflow-y: auto;
+            margin-top: 6px;
+            padding-right: 2px;
+        }
+
+        #profile-expanded::-webkit-scrollbar {
+            width: 4px;
+        }
+        #profile-expanded::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        .expanded-section {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 8px 9px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .expanded-label {
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #9ca3af;
+            text-transform: uppercase;
+        }
+
+        .profile-photo-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, opacity 0.15s;
+        }
+
+        .btn-primary {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #d1d5db;
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 0.78rem;
+            padding: 2px 4px;
+            opacity: 0.7;
+            transition: opacity 0.15s, transform 0.15s;
+        }
+        .btn-icon:hover {
+            opacity: 1;
+            transform: scale(1.08);
+        }
+
+        .username-display-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: #fff;
+        }
+
+        .username-edit-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 2px;
+        }
+
+        .username-edit-row input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 4px;
+            padding: 4px 8px;
+            color: #fff;
             font-size: 0.75rem;
-            color: #aaa;
-            margin-top: 4px;
+            outline: none;
+            font-family: inherit;
+        }
+        .username-edit-row input:focus {
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .username-edit-actions {
+            display: flex;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+
+        .form-error {
+            font-size: 0.65rem;
+            color: #f87171;
+            margin-top: 2px;
+        }
+
+        /* Toggle switch for location privacy */
+        .toggle-setting {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            cursor: pointer;
+            margin-top: 2px;
+        }
+
+        .toggle-label-wrap {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+
+        .toggle-title {
+            font-size: 0.74rem;
+            color: #eee;
+            line-height: 1.2;
+        }
+
+        .toggle-desc {
+            font-size: 0.62rem;
+            color: #888;
+        }
+
+        .toggle-switch-input {
+            position: relative;
+            appearance: none;
+            -webkit-appearance: none;
+            width: 34px;
+            height: 18px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 10px;
+            outline: none;
+            cursor: pointer;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch-input:checked {
+            background: rgba(255, 255, 255, 0.45);
+        }
+
+        .toggle-switch-input::before {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch-input:checked::before {
+            transform: translateX(16px);
+        }
+
+        /* Friends section */
+        .friends-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .friends-badge {
+            background: rgba(255, 255, 255, 0.1);
+            font-size: 0.62rem;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 10px;
+            color: #9ca3af;
+        }
+
+        .friends-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 6px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .friends-list::-webkit-scrollbar {
+            width: 3px;
+        }
+        .friends-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .friend-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 6px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 6px;
+        }
+
+        .friend-avatar-wrap {
+            position: relative;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            overflow: visible;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .friend-avatar-wrap img {
+            border-radius: 50%;
+        }
+
+        .status-dot {
+            position: absolute;
+            bottom: -1px;
+            right: -1px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 1.5px solid #16161a;
+        }
+        .status-dot.online {
+            background: #10b981;
+        }
+        .status-dot.offline {
+            background: #6b7280;
+        }
+
+        .friend-info {
+            flex-grow: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .friend-name {
+            font-size: 0.74rem;
+            font-weight: 600;
+            color: #eee;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .friend-subtext {
+            font-size: 0.62rem;
+            color: #9ca3af;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .friend-subtext.world-tag {
+            color: #e5e7eb;
+            font-weight: 500;
+        }
+
+        .friend-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .btn-ping {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #e5e7eb;
+            font-size: 0.62rem;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-ping:hover {
+            background: rgba(255, 255, 255, 0.22);
+            color: #ffffff;
+        }
+
+        .friends-empty {
+            font-size: 0.68rem;
+            color: #777;
+            text-align: center;
+            padding: 8px 4px;
+        }
+
+        /* Toast notification */
+        #game-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(24, 24, 28, 0.94);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 0.8rem;
+            color: #f3f4f6;
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: opacity 0.3s, transform 0.3s;
+            z-index: 100;
+        }
+        #game-toast.show {
+            opacity: 1;
+            transform: translateY(0);
         }
 
         /* ---- VERTICAL BLOCK DISCOVERY & SELECTION PANEL ---- */
         #block-panel {
-            position: absolute;
-            left: 16px;
-            bottom: 24px;
-            width: 216px;
-            background: rgba(18, 22, 34, 0.88);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 10px;
             padding: 8px;
             display: flex;
             flex-direction: column;
             gap: 6px;
-            user-select: none;
-            z-index: 20;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         }
 
         #block-search-bar {
@@ -133,8 +595,8 @@
 
         #block-search-input {
             width: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.14);
             border-radius: 6px;
             padding: 6px 30px 6px 10px;
             color: #fff;
@@ -145,16 +607,16 @@
         }
 
         #block-search-input:focus {
-            background: rgba(10, 14, 24, 0.85);
-            border-color: #7ecfff;
-            box-shadow: 0 0 6px rgba(126, 207, 255, 0.4);
+            background: rgba(0, 0, 0, 0.55);
+            border-color: rgba(255, 255, 255, 0.45);
+            box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
         }
 
         #block-search-badge {
             position: absolute;
             right: 8px;
-            background: rgba(255, 255, 255, 0.15);
-            color: #aaa;
+            background: rgba(255, 255, 255, 0.1);
+            color: #9ca3af;
             font-size: 0.65rem;
             font-weight: 700;
             padding: 2px 5px;
@@ -186,11 +648,11 @@
         }
 
         .block-slot.active {
-            background: rgba(126, 207, 255, 0.2);
-            border-color: #7ecfff;
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.5);
             color: #fff;
             font-weight: 600;
-            box-shadow: 0 0 8px rgba(126, 207, 255, 0.3);
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
         }
 
         .block-slot.empty {
@@ -214,8 +676,8 @@
         }
 
         .block-slot.active .slot-key {
-            background: #7ecfff;
-            color: #0b1a2e;
+            background: #ffffff;
+            color: #111116;
         }
 
         .slot-swatch {
@@ -304,29 +766,106 @@
             <p>Your mouse will be captured for camera control.<br>Press <strong>Escape</strong> to release.</p>
         </div>
 
-        <!-- HUD -->
-        <div id="hud">
-            <div>👤 <span id="hud-name">-</span></div>
-            <div class="coords" id="hud-coords">x: 0 | y: 0 | z: 0</div>
-            <div class="coords" id="hud-players">Players: 1</div>
+        <!-- Unified Left UI Container -->
+        <div id="left-ui-container">
+            <!-- Top Panel: World & User Information -->
+            <div id="info-panel" class="left-panel">
+                <!-- 1. World Information -->
+                <div id="world-section">
+                    <div class="world-title" id="hud-world-name">Somewhere</div>
+                    <div class="world-players" id="hud-players">Players: 1</div>
+                </div>
+
+                <div class="panel-divider"></div>
+
+                <!-- 2. User Information Section (Collapsed State Trigger) -->
+                <div id="user-section">
+                    <div id="user-collapsed" title="Click to view/edit profile and friends">
+                        <div class="user-avatar-wrap">
+                            <img id="user-avatar-img" class="user-avatar" src="" alt="" style="display:none;" />
+                            <div id="user-avatar-placeholder" class="user-avatar-placeholder">👤</div>
+                        </div>
+                        <div class="user-info-text">
+                            <div class="user-name" id="hud-name">-</div>
+                        </div>
+                        <svg class="chevron-icon" id="profile-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+
+                    <!-- 3. Expanded Profile -->
+                    <div id="profile-expanded">
+                        <!-- Profile Picture -->
+                        <div class="expanded-section">
+                            <div class="expanded-label">PROFILE PICTURE</div>
+                            <div class="profile-photo-row">
+                                <div class="user-avatar-wrap small">
+                                    <img id="expanded-avatar-img" class="user-avatar small" src="" alt="" style="display:none;" />
+                                    <div id="expanded-avatar-placeholder" class="user-avatar-placeholder small">👤</div>
+                                </div>
+                                <button id="btn-edit-avatar" class="btn-icon" title="Change photo">✏️</button>
+                                <input type="file" id="avatar-file-input" accept="image/png,image/jpeg,image/webp" style="display:none;" />
+                            </div>
+                        </div>
+
+                        <!-- Username -->
+                        <div class="expanded-section">
+                            <div class="expanded-label">USERNAME</div>
+                            <div id="username-display-row" class="username-display-row">
+                                <span id="expanded-username" class="username-text">-</span>
+                                <button id="btn-edit-username" class="btn-icon" title="Edit username">✏️</button>
+                            </div>
+                            <div id="username-edit-row" class="username-edit-row" style="display:none;">
+                                <input type="text" id="username-input" maxlength="20" placeholder="New username..." spellcheck="false" autocomplete="off" />
+                                <div class="username-edit-actions">
+                                    <button id="btn-save-username" class="btn-primary btn-sm">Save</button>
+                                    <button id="btn-cancel-username" class="btn-secondary btn-sm">Cancel</button>
+                                </div>
+                            </div>
+                            <div id="username-error" class="form-error" style="display:none;"></div>
+                        </div>
+
+                        <!-- Privacy Setting -->
+                        <div class="expanded-section">
+                            <div class="expanded-label">PRIVACY</div>
+                            <label class="toggle-setting" for="toggle-show-world">
+                                <span class="toggle-title">Current world visibility</span>
+                                <input type="checkbox" id="toggle-show-world" class="toggle-switch-input" />
+                            </label>
+                        </div>
+
+                        <!-- Friends List -->
+                        <div class="expanded-section friends-section">
+                            <div class="friends-header">
+                                <span class="expanded-label">FRIENDS</span>
+                                <span id="friends-count" class="friends-badge">0</span>
+                            </div>
+                            <div id="friends-list" class="friends-list">
+                                <!-- Populated dynamically -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Block Selection Panel -->
+            <div id="block-panel" class="left-panel">
+                <div id="block-search-bar">
+                    <input type="text" id="block-search-input" placeholder="Search blocks... [F]" autocomplete="off"
+                        spellcheck="false" maxlength="30">
+                    <span id="block-search-badge">F</span>
+                </div>
+                <div id="block-slots">
+                    <!-- 10 dynamic slots rendered by JS -->
+                </div>
+            </div>
         </div>
 
-        <!-- Controls help (removed) -->
-
-        <!-- Vertical Block Selection & Search Panel -->
-        <div id="block-panel">
-            <div id="block-search-bar">
-                <input type="text" id="block-search-input" placeholder="Search blocks... [F]" autocomplete="off"
-                    spellcheck="false" maxlength="30">
-                <span id="block-search-badge">F</span>
-            </div>
-            <div id="block-slots">
-                <!-- 10 dynamic slots rendered by JS -->
-            </div>
-        </div>
+        <!-- Toast notification container -->
+        <div id="game-toast"></div>
 
         <!-- Chat hint -->
-        <div id="chat-hint">Press "/" to chat</div>
+        <div id="chat-hint">Press Enter to chat</div>
     </div>
 
     <!-- Socket.IO client library (served by our server) -->
@@ -468,12 +1007,17 @@
             }
 
             // Request pointer lock on click anywhere in the game (even in chat mode),
-            // except when interacting with the block discovery & search panel.
+            // except when interacting with UI panels (left UI container, info panel, block panel, toast).
             window.addEventListener('click', (e) => {
                 if (document.activeElement === blockSearchInput && e.target !== blockSearchInput) {
                     blockSearchInput.blur();
                 }
-                if (e.target && e.target.closest && (e.target.closest('#block-panel') || e.target.closest('#block-selector'))) return;
+                if (e.target && e.target.closest && (
+                    e.target.closest('#left-ui-container') ||
+                    e.target.closest('#info-panel') ||
+                    e.target.closest('#block-panel') ||
+                    e.target.closest('#game-toast')
+                )) return;
                 requestLock();
             });
 
@@ -674,10 +1218,362 @@
             }
 
             // ================================================================
+            // FLOATING TOAST NOTIFICATIONS
+            // ================================================================
+
+            let toastTimer = null;
+            function showToast(msg) {
+                const toast = document.getElementById('game-toast');
+                if (!toast) return;
+                toast.textContent = msg;
+                toast.classList.add('show');
+                if (toastTimer) clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000);
+            }
+
+            // ================================================================
+            // PROFILE & FRIENDS SYSTEM (TOP PANEL CONTROLLER)
+            // ================================================================
+
+            function initProfileAndFriends(currentUser, socket) {
+                let userProfile = { ...currentUser };
+                let friends = [];
+
+                const userSection = document.getElementById('user-section');
+                const userCollapsed = document.getElementById('user-collapsed');
+                const profileExpanded = document.getElementById('profile-expanded');
+
+                // Elements
+                const hudWorldName = document.getElementById('hud-world-name');
+                const hudPlayers = document.getElementById('hud-players');
+                const hudName = document.getElementById('hud-name');
+                const userAvatarImg = document.getElementById('user-avatar-img');
+                const userAvatarPlaceholder = document.getElementById('user-avatar-placeholder');
+
+                const expandedAvatarImg = document.getElementById('expanded-avatar-img');
+                const expandedAvatarPlaceholder = document.getElementById('expanded-avatar-placeholder');
+                const avatarFileInput = document.getElementById('avatar-file-input');
+
+                const expandedUsername = document.getElementById('expanded-username');
+                const btnEditUsername = document.getElementById('btn-edit-username');
+                const usernameDisplayRow = document.getElementById('username-display-row');
+                const usernameEditRow = document.getElementById('username-edit-row');
+                const usernameInput = document.getElementById('username-input');
+                const btnSaveUsername = document.getElementById('btn-save-username');
+                const btnCancelUsername = document.getElementById('btn-cancel-username');
+                const usernameError = document.getElementById('username-error');
+
+                const toggleShowWorld = document.getElementById('toggle-show-world');
+
+                const friendsCount = document.getElementById('friends-count');
+                const friendsListEl = document.getElementById('friends-list');
+
+                function escapeHtml(str) {
+                    if (!str) return '';
+                    return String(str).replace(/[&<>"']/g, (m) => ({
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '"': '&quot;',
+                        "'": '&#39;'
+                    })[m]);
+                }
+
+                function formatRelativeTime(dateString) {
+                    if (!dateString) return 'a while ago';
+                    const past = new Date(dateString).getTime();
+                    const diffSec = Math.max(0, Math.floor((Date.now() - past) / 1000));
+                    if (diffSec < 60) return 'just now';
+                    const diffMin = Math.floor(diffSec / 60);
+                    if (diffMin < 60) return `${diffMin}m ago`;
+                    const diffHr = Math.floor(diffMin / 60);
+                    if (diffHr < 24) return `${diffHr}h ago`;
+                    const diffDays = Math.floor(diffHr / 24);
+                    if (diffDays === 1) return 'yesterday';
+                    return `${diffDays}d ago`;
+                }
+
+                function renderProfile() {
+                    hudName.textContent = userProfile.displayName || 'Player';
+                    expandedUsername.textContent = userProfile.displayName || 'Player';
+
+                    if (userProfile.avatar) {
+                        userAvatarImg.src = userProfile.avatar;
+                        userAvatarImg.style.display = 'block';
+                        userAvatarPlaceholder.style.display = 'none';
+
+                        expandedAvatarImg.src = userProfile.avatar;
+                        expandedAvatarImg.style.display = 'block';
+                        expandedAvatarPlaceholder.style.display = 'none';
+                    } else {
+                        userAvatarImg.style.display = 'none';
+                        userAvatarPlaceholder.style.display = 'block';
+
+                        expandedAvatarImg.style.display = 'none';
+                        expandedAvatarPlaceholder.style.display = 'block';
+                    }
+
+                    toggleShowWorld.checked = Boolean(userProfile.showWorldToFriends);
+                }
+
+                function renderFriends() {
+                    friendsCount.textContent = friends.length;
+
+                    if (friends.length === 0) {
+                        friendsListEl.innerHTML = '<div class="friends-empty">No friends added yet.</div>';
+                        return;
+                    }
+
+                    friendsListEl.innerHTML = '';
+                    for (const friend of friends) {
+                        const row = document.createElement('div');
+                        row.className = 'friend-row';
+
+                        const statusClass = friend.isOnline ? 'online' : 'offline';
+                        let subtext = '';
+                        let isWorldTag = false;
+
+                        if (friend.isOnline) {
+                            if (friend.currentWorld) {
+                                subtext = `📍 ${friend.currentWorld}`;
+                                isWorldTag = true;
+                            } else {
+                                subtext = 'Online';
+                            }
+                        } else {
+                            subtext = `Last seen ${formatRelativeTime(friend.lastActive)}`;
+                        }
+
+                        const avatarContent = friend.avatar
+                            ? `<img src="${escapeHtml(friend.avatar)}" class="user-avatar" alt="" />`
+                            : `<div class="user-avatar-placeholder small">👤</div>`;
+
+                        row.innerHTML = `
+                            <div class="friend-avatar-wrap">
+                                ${avatarContent}
+                                <span class="status-dot ${statusClass}"></span>
+                            </div>
+                            <div class="friend-info">
+                                <span class="friend-name">${escapeHtml(friend.displayName)}</span>
+                                <span class="friend-subtext ${isWorldTag ? 'world-tag' : ''}">${escapeHtml(subtext)}</span>
+                            </div>
+                            <div class="friend-actions">
+                                <button class="btn-ping" data-friend-id="${friend.id}" title="Send a quick ping">Ping</button>
+                            </div>
+                        `;
+
+                        const pingBtn = row.querySelector('.btn-ping');
+                        pingBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            socket.emit('friend:ping', { friendId: friend.id });
+                            pingBtn.textContent = 'Pinged!';
+                            pingBtn.style.opacity = '0.6';
+                            setTimeout(() => {
+                                pingBtn.textContent = 'Ping';
+                                pingBtn.style.opacity = '1';
+                            }, 2000);
+                            showToast(`Pinged ${friend.displayName}!`);
+                        });
+
+                        friendsListEl.appendChild(row);
+                    }
+                }
+
+                async function loadFriends() {
+                    try {
+                        const res = await fetch('/api/friends');
+                        const data = await res.json();
+                        if (data.friends) {
+                            friends = data.friends;
+                            renderFriends();
+                        }
+                    } catch (err) {
+                        console.error('Failed to load friends:', err);
+                    }
+                }
+
+                userCollapsed.addEventListener('click', (e) => {
+                    userSection.classList.toggle('expanded');
+                });
+
+                profileExpanded.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+
+                const btnEditAvatar = document.getElementById('btn-edit-avatar');
+                if (btnEditAvatar) {
+                    btnEditAvatar.addEventListener('click', () => {
+                        avatarFileInput.click();
+                    });
+                }
+
+                avatarFileInput.addEventListener('change', async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    if (!file.type.startsWith('image/')) {
+                        showToast('Please select a valid image file (PNG, JPG, WebP).');
+                        return;
+                    }
+
+                    if (file.size > 2 * 1024 * 1024) {
+                        showToast('Image file too large (max 2MB).');
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = async () => {
+                        const base64 = reader.result;
+                        try {
+                            const res = await fetch('/api/profile', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ avatar: base64 }),
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                                userProfile.avatar = data.user.avatar;
+                                renderProfile();
+                                showToast('Profile picture updated!');
+                            } else {
+                                showToast(data.error || 'Failed to update avatar.');
+                            }
+                        } catch (err) {
+                            console.error('Avatar update error:', err);
+                            showToast('Network error updating avatar.');
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                });
+
+                btnEditUsername.addEventListener('click', () => {
+                    usernameInput.value = userProfile.displayName;
+                    usernameError.style.display = 'none';
+                    usernameDisplayRow.style.display = 'none';
+                    usernameEditRow.style.display = 'flex';
+                    usernameInput.focus();
+                });
+
+                btnCancelUsername.addEventListener('click', () => {
+                    usernameDisplayRow.style.display = 'flex';
+                    usernameEditRow.style.display = 'none';
+                    usernameError.style.display = 'none';
+                });
+
+                async function saveUsername() {
+                    const newName = usernameInput.value.trim();
+                    if (newName.length < 3 || newName.length > 20) {
+                        usernameError.textContent = 'Username must be 3-20 characters.';
+                        usernameError.style.display = 'block';
+                        return;
+                    }
+                    if (!/^[a-zA-Z0-9_\- ]+$/.test(newName)) {
+                        usernameError.textContent = 'Only letters, numbers, spaces, - and _ allowed.';
+                        usernameError.style.display = 'block';
+                        return;
+                    }
+
+                    try {
+                        const res = await fetch('/api/profile', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ displayName: newName }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            userProfile.displayName = data.user.displayName;
+                            renderProfile();
+                            usernameDisplayRow.style.display = 'flex';
+                            usernameEditRow.style.display = 'none';
+                            usernameError.style.display = 'none';
+                            showToast('Username updated!');
+                        } else {
+                            usernameError.textContent = data.error || 'Failed to update username.';
+                            usernameError.style.display = 'block';
+                        }
+                    } catch (err) {
+                        console.error('Username save error:', err);
+                        usernameError.textContent = 'Network error saving username.';
+                        usernameError.style.display = 'block';
+                    }
+                }
+
+                btnSaveUsername.addEventListener('click', saveUsername);
+                usernameInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        saveUsername();
+                    } else if (e.key === 'Escape') {
+                        btnCancelUsername.click();
+                    }
+                });
+
+                toggleShowWorld.addEventListener('change', async () => {
+                    const isChecked = toggleShowWorld.checked;
+                    try {
+                        const res = await fetch('/api/profile', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ showWorldToFriends: isChecked }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            userProfile.showWorldToFriends = data.user.showWorldToFriends;
+                            showToast(isChecked ? 'Current world visible to friends' : 'Current world hidden from friends');
+                        } else {
+                            toggleShowWorld.checked = !isChecked;
+                            showToast(data.error || 'Failed to update privacy setting.');
+                        }
+                    } catch (err) {
+                        console.error('Privacy update error:', err);
+                        toggleShowWorld.checked = !isChecked;
+                        showToast('Network error updating privacy setting.');
+                    }
+                });
+
+                socket.on('friends:presence', (friendData) => {
+                    const idx = friends.findIndex(f => f.id === friendData.id);
+                    if (idx >= 0) {
+                        friends[idx] = { ...friends[idx], ...friendData };
+                        renderFriends();
+                    }
+                });
+
+                socket.on('friend:pinged', (data) => {
+                    showToast(`🔔 ${data.fromName} pinged you!`);
+                });
+
+                socket.on('world:info', (data) => {
+                    if (data.worldName) {
+                        hudWorldName.textContent = data.worldName;
+                    }
+                    if (typeof data.playerCount === 'number') {
+                        hudPlayers.textContent = `Players: ${data.playerCount}`;
+                    }
+                });
+
+                socket.on('player_updated', (data) => {
+                    if (data.userId === userProfile.id) {
+                        userProfile.displayName = data.name;
+                        if (data.avatar !== undefined) userProfile.avatar = data.avatar;
+                        renderProfile();
+                    }
+                });
+
+                renderProfile();
+                loadFriends();
+            }
+
+            // ================================================================
             // SOCKET.IO
             // ================================================================
 
             const socket = io();
+
+            // Initialize profile and friends system
+            initProfileAndFriends(user, socket);
 
             let mySocketId = null;
 
@@ -692,7 +1588,17 @@
                 serverPos.y = data.player.position.y;
                 serverPos.z = data.player.position.z;
                 console.log('Welcome!', data.player.name, 'at', data.player.position);
-                updateHudPlayers();
+                
+                if (data.worldName) {
+                    const el = document.getElementById('hud-world-name');
+                    if (el) el.textContent = data.worldName;
+                }
+                if (typeof data.playerCount === 'number') {
+                    const el = document.getElementById('hud-players');
+                    if (el) el.textContent = `Players: ${data.playerCount}`;
+                } else {
+                    updateHudPlayers();
+                }
 
                 // Load persistent recent blocks from server profile
                 if (data.recentBlocks && Array.isArray(data.recentBlocks)) {
@@ -836,8 +1742,12 @@
                 }
 
                 // --- NORMAL GAMEPLAY / UI INPUT ---
-                // If search input is focused, don't intercept keys for gameplay
-                if (document.activeElement === blockSearchInput) {
+                // If an input is focused, don't intercept keys for gameplay
+                const isTyping = document.activeElement && (
+                    document.activeElement.tagName === 'INPUT' ||
+                    document.activeElement.tagName === 'TEXTAREA'
+                );
+                if (isTyping) {
                     return;
                 }
 
@@ -856,8 +1766,8 @@
                     return;
                 }
 
-                // Enter chat mode with "/" key.
-                if (e.key === '/') {
+                // Enter chat mode with "Enter" key.
+                if (e.key === 'Enter') {
                     e.preventDefault();
                     chatMode = true;
                     chatText = '';
@@ -876,7 +1786,11 @@
             });
 
             window.addEventListener('keyup', (e) => {
-                if (chatMode || document.activeElement === blockSearchInput) return; // ignore key-ups during typing
+                const isTyping = document.activeElement && (
+                    document.activeElement.tagName === 'INPUT' ||
+                    document.activeElement.tagName === 'TEXTAREA'
+                );
+                if (chatMode || isTyping) return; // ignore key-ups during typing
                 const k = e.key.toLowerCase();
                 if (k in keys) keys[k] = false;
             });
@@ -1325,7 +2239,11 @@
             // Left-click (button 0): remove block
             // Right-click (button 2): place block
             document.addEventListener('mousedown', (e) => {
-                if (!pointerLocked || chatMode || document.activeElement === blockSearchInput) return;
+                const isTyping = document.activeElement && (
+                    document.activeElement.tagName === 'INPUT' ||
+                    document.activeElement.tagName === 'TEXTAREA'
+                );
+                if (!pointerLocked || chatMode || isTyping) return;
 
                 if (e.button === 0) {
                     // Left-click: remove the block you're looking at
@@ -1513,10 +2431,6 @@
                     }
                 }
 
-                // --- UPDATE HUD COORDS ---
-                document.getElementById('hud-coords').textContent =
-                    `x: ${localPos.x.toFixed(1)} | y: ${localPos.y.toFixed(1)} | z: ${localPos.z.toFixed(1)}`;
-
                 renderer.render(scene, camera);
             }
 
@@ -1528,7 +2442,8 @@
 
             function updateHudPlayers() {
                 const total = remotePlayers.size + 1; // +1 for self
-                document.getElementById('hud-players').textContent = `Players: ${total}`;
+                const el = document.getElementById('hud-players');
+                if (el) el.textContent = `Players: ${total}`;
             }
 
             // Handle window resize.

@@ -28,16 +28,29 @@ passport.use(
         },
         async (accessToken, refreshToken, profile, done) => {
             try {
-                // "upsert" = update if exists, create if not.
-                // We only use the Google ID and display name.
-                const user = await prisma.user.upsert({
+                // Check if user exists to preserve customized displayName/avatar
+                const existing = await prisma.user.findUnique({
                     where: { googleId: profile.id },
-                    update: { displayName: profile.displayName },
-                    create: {
-                        googleId: profile.id,
-                        displayName: profile.displayName,
-                    },
                 });
+
+                let user;
+                if (existing) {
+                    user = await prisma.user.update({
+                        where: { id: existing.id },
+                        data: { lastActive: new Date() },
+                    });
+                } else {
+                    const avatarUrl = (profile.photos && profile.photos[0]) ? profile.photos[0].value : null;
+                    user = await prisma.user.create({
+                        data: {
+                            googleId: profile.id,
+                            displayName: profile.displayName || "Player",
+                            avatar: avatarUrl,
+                            lastActive: new Date(),
+                        },
+                    });
+                }
+
                 // Pass the full user record to serializeUser.
                 return done(null, user);
             } catch (err) {
@@ -126,6 +139,9 @@ function mountAuthRoutes(app) {
                 user: {
                     id: req.user.id,
                     displayName: req.user.displayName,
+                    avatar: req.user.avatar || null,
+                    showWorldToFriends: !!req.user.showWorldToFriends,
+                    lastActive: req.user.lastActive,
                     // Send last saved position so the client can resume from there.
                     position: {
                         x: req.user.posX,

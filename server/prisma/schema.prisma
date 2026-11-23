@@ -17,15 +17,31 @@ datasource db {
 // googleId is the stable, unique ID Google assigns to every user.
 // We store their last known 3D position so they resume where they left off.
 model User {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  googleId    String   @unique   // Google's "sub" claim — never changes
-  displayName String             // e.g. "Alice Smith" from their Google profile
-  posX         Float    @default(0)
-  posY         Float    @default(2.5) // Eye height above the ground
-  posZ         Float    @default(0)
-  recentBlocks String[] @default([])
-  createdAt    DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  googleId           String   @unique   // Google's "sub" claim — never changes
+  displayName        String             // e.g. "Alice Smith", editable by user
+  avatar             String?            // Profile picture URL or data URI
+  posX               Float    @default(0)
+  posY               Float    @default(2.5) // Eye height above the ground
+  posZ               Float    @default(0)
+  showWorldToFriends Boolean? @default(false) // Privacy setting: default OFF
+  lastActive         DateTime? @default(now())
+  recentBlocks       String[] @default([])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// -------------------------------------------------
+// Friendship
+// -------------------------------------------------
+// Represents a persistent connection between two players.
+model Friendship {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  friendId  String   @db.ObjectId
+  createdAt DateTime @default(now())
+
+  @@unique([userId, friendId])
 }
 
 // -------------------------------------------------

@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node test/test-simulation.js && node test/test-network-protocol.js && node test/test-block-catalog.js",
+    "test": "node test/test-simulation.js && node test/test-network-protocol.js && node test/test-block-catalog.js && node test/test-profile-friends.js",
     "start": "node src/server.js"
   },
   "keywords": [],

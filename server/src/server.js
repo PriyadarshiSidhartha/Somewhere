@@ -36,7 +36,7 @@ const PORT       = process.env.PORT || 3000;
 // MIDDLEWARE
 // --------------------------------------------------
 
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
 
 // Session middleware (must come before passport).
 const sessionMiddleware = createSessionMiddleware();
@@ -66,6 +66,251 @@ app.get("/api/blocks", (req, res) => {
 // Health check
 app.get("/health", (req, res) => {
     res.json({ status: "ok", name: "Somewhere" });
+});
+
+// --------------------------------------------------
+// PROFILE & FRIENDS API
+// --------------------------------------------------
+
+const CURRENT_WORLD_NAME = "Somewhere";
+
+// Map: userId -> Set of socketId (real-time presence)
+const onlineUsers = new Map();
+
+// Helper: retrieve friends for a user with privacy-filtered world and online presence
+async function getFriendsForUser(userId) {
+    const friendships = await prisma.friendship.findMany({
+        where: {
+            OR: [
+                { userId: userId },
+                { friendId: userId },
+            ],
+        },
+    });
+
+    const friendIds = friendships.map((f) => (f.userId === userId ? f.friendId : f.userId));
+    if (friendIds.length === 0) return [];
+
+    const users = await prisma.user.findMany({
+        where: { id: { in: friendIds } },
+        select: {
+            id: true,
+            displayName: true,
+            avatar: true,
+            showWorldToFriends: true,
+            lastActive: true,
+        },
+    });
+
+    return users.map((u) => {
+        const isOnline = onlineUsers.has(u.id) && onlineUsers.get(u.id).size > 0;
+        return {
+            id: u.id,
+            displayName: u.displayName,
+            avatar: u.avatar || null,
+            isOnline,
+            currentWorld: (isOnline && u.showWorldToFriends) ? CURRENT_WORLD_NAME : null,
+            lastActive: u.lastActive,
+        };
+    });
+}
+
+// Helper: notify online friends of user's presence or profile updates
+async function notifyFriendsOfPresence(userId) {
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                displayName: true,
+                avatar: true,
+                showWorldToFriends: true,
+                lastActive: true,
+            },
+        });
+        if (!user) return;
+
+        const isOnline = onlineUsers.has(userId) && onlineUsers.get(userId).size > 0;
+        const friendships = await prisma.friendship.findMany({
+            where: {
+                OR: [
+                    { userId: userId },
+                    { friendId: userId },
+                ],
+            },
+        });
+
+        for (const f of friendships) {
+            const friendId = f.userId === userId ? f.friendId : f.userId;
+            const socketSet = onlineUsers.get(friendId);
+            if (socketSet && socketSet.size > 0) {
+                const friendData = {
+                    id: user.id,
+                    displayName: user.displayName,
+                    avatar: user.avatar || null,
+                    isOnline,
+                    currentWorld: (isOnline && user.showWorldToFriends) ? CURRENT_WORLD_NAME : null,
+                    lastActive: user.lastActive,
+                };
+                for (const sId of socketSet) {
+                    io.to(sId).emit("friends:presence", friendData);
+                }
+            }
+        }
+    } catch (err) {
+        console.error("notifyFriendsOfPresence error:", err);
+    }
+}
+
+// PUT /api/profile — Update username, avatar, or location privacy
+app.put("/api/profile", async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { displayName, avatar, showWorldToFriends } = req.body;
+    const updateData = {};
+
+    // Validate username
+    if (displayName !== undefined) {
+        if (typeof displayName !== "string") {
+            return res.status(400).json({ error: "Invalid username format." });
+        }
+        const trimmed = displayName.trim();
+        if (trimmed.length < 3 || trimmed.length > 20) {
+            return res.status(400).json({ error: "Username must be between 3 and 20 characters." });
+        }
+        if (!/^[a-zA-Z0-9_\- ]+$/.test(trimmed)) {
+            return res.status(400).json({ error: "Username can only contain letters, numbers, spaces, underscores, and hyphens." });
+        }
+
+        // Check uniqueness across other users
+        const existing = await prisma.user.findFirst({
+            where: {
+                displayName: { equals: trimmed, mode: "insensitive" },
+                NOT: { id: req.user.id },
+            },
+        });
+        if (existing) {
+            return res.status(400).json({ error: "Username is already taken." });
+        }
+        updateData.displayName = trimmed;
+    }
+
+    // Validate avatar image
+    if (avatar !== undefined) {
+        if (avatar === null || avatar === "") {
+            updateData.avatar = null;
+        } else if (typeof avatar === "string") {
+            if (avatar.length > 3 * 1024 * 1024) {
+                return res.status(400).json({ error: "Avatar image is too large (max 2MB)." });
+            }
+            if (!avatar.startsWith("data:image/") && !avatar.startsWith("http://") && !avatar.startsWith("https://")) {
+                return res.status(400).json({ error: "Invalid avatar format. Must be an image or URL." });
+            }
+            updateData.avatar = avatar;
+        }
+    }
+
+    // Validate location privacy toggle
+    if (showWorldToFriends !== undefined) {
+        if (typeof showWorldToFriends !== "boolean") {
+            return res.status(400).json({ error: "Invalid showWorldToFriends setting." });
+        }
+        updateData.showWorldToFriends = showWorldToFriends;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ error: "No fields provided to update." });
+    }
+
+    try {
+        const updatedUser = await prisma.user.update({
+            where: { id: req.user.id },
+            data: updateData,
+        });
+
+        // Update passport session
+        Object.assign(req.user, updatedUser);
+
+        // Update in-memory player state
+        for (const [sId, p] of players) {
+            if (p.userId === req.user.id) {
+                if (updateData.displayName) {
+                    p.name = updateData.displayName;
+                }
+                io.emit("player_updated", {
+                    playerId: sId,
+                    userId: req.user.id,
+                    name: p.name,
+                    avatar: updatedUser.avatar,
+                });
+            }
+        }
+
+        // Notify friends of updated presence / world visibility
+        notifyFriendsOfPresence(req.user.id);
+
+        res.json({
+            success: true,
+            user: {
+                id: updatedUser.id,
+                displayName: updatedUser.displayName,
+                avatar: updatedUser.avatar,
+                showWorldToFriends: updatedUser.showWorldToFriends,
+                lastActive: updatedUser.lastActive,
+            },
+        });
+    } catch (err) {
+        console.error("Failed to update profile:", err);
+        res.status(500).json({ error: "Failed to update profile." });
+    }
+});
+
+// GET /api/friends — List friends with real-time status and privacy-filtered world
+app.get("/api/friends", async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+    try {
+        const friends = await getFriendsForUser(req.user.id);
+        res.json({ friends });
+    } catch (err) {
+        console.error("Failed to get friends:", err);
+        res.status(500).json({ error: "Failed to get friends." });
+    }
+});
+
+// POST /api/friends/add — Disabled (will be redesigned later)
+app.post("/api/friends/add", (req, res) => {
+    res.status(403).json({ error: "Adding friends by username is disabled." });
+});
+
+// DELETE /api/friends/:id — Remove friend
+app.delete("/api/friends/:id", async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+    const friendId = req.params.id;
+
+    try {
+        await prisma.friendship.deleteMany({
+            where: {
+                OR: [
+                    { userId: req.user.id, friendId },
+                    { userId: friendId, friendId: req.user.id },
+                ],
+            },
+        });
+
+        notifyFriendsOfPresence(req.user.id);
+        notifyFriendsOfPresence(friendId);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Failed to remove friend:", err);
+        res.status(500).json({ error: "Failed to remove friend." });
+    }
 });
 
 // --------------------------------------------------
@@ -136,6 +381,21 @@ io.on("connection", async (socket) => {
 
     players.set(socket.id, player);
 
+    // Track online user presence
+    if (!onlineUsers.has(dbUser.id)) {
+        onlineUsers.set(dbUser.id, new Set());
+    }
+    onlineUsers.get(dbUser.id).add(socket.id);
+
+    // Update lastActive timestamp in DB
+    prisma.user.update({
+        where: { id: dbUser.id },
+        data: { lastActive: new Date() },
+    }).catch((err) => console.error("Failed to update lastActive:", err));
+
+    // Notify friends of presence
+    notifyFriendsOfPresence(dbUser.id);
+
     console.log(`${player.name} connected (userId: ${dbUser.id})`);
 
     // 1. Tell this client who they are + world config.
@@ -147,6 +407,14 @@ io.on("connection", async (socket) => {
         player: getPublicPlayerState(player),
         world: WORLD_CONFIG,
         recentBlocks: initialRecent,
+        worldName: CURRENT_WORLD_NAME,
+        playerCount: players.size,
+    });
+
+    // Broadcast world player count to everyone in the world
+    io.emit("world:info", {
+        worldName: CURRENT_WORLD_NAME,
+        playerCount: players.size,
     });
 
     // 2. Send the full block world to this new client.
@@ -319,6 +587,20 @@ io.on("connection", async (socket) => {
         });
     });
 
+    // Friend ping event
+    socket.on("friend:ping", (data) => {
+        if (!data || !data.friendId) return;
+        const friendSockets = onlineUsers.get(data.friendId);
+        if (friendSockets && friendSockets.size > 0) {
+            for (const sId of friendSockets) {
+                io.to(sId).emit("friend:pinged", {
+                    fromId: dbUser.id,
+                    fromName: dbUser.displayName,
+                });
+            }
+        }
+    });
+
     // --------------------------------------------------
     // DISCONNECT
     // --------------------------------------------------
@@ -328,6 +610,23 @@ io.on("connection", async (socket) => {
         if (!p) return;
 
         resetPlayerMovementInput(p);
+
+        // Remove from online user socket set
+        if (onlineUsers.has(p.userId)) {
+            const userSockets = onlineUsers.get(p.userId);
+            userSockets.delete(socket.id);
+            if (userSockets.size === 0) {
+                onlineUsers.delete(p.userId);
+                // Update lastActive timestamp in DB
+                const now = new Date();
+                prisma.user.update({
+                    where: { id: p.userId },
+                    data: { lastActive: now },
+                }).catch((err) => console.error("Failed to update lastActive on disconnect:", err));
+                // Notify friends that user went offline
+                notifyFriendsOfPresence(p.userId);
+            }
+        }
 
         // Save the player's last position to MongoDB.
         try {
@@ -344,6 +643,12 @@ io.on("connection", async (socket) => {
         }
 
         players.delete(socket.id);
+
+        // Broadcast updated world player count
+        io.emit("world:info", {
+            worldName: CURRENT_WORLD_NAME,
+            playerCount: players.size,
+        });
 
         // Tell all other clients this player left.
         socket.broadcast.emit("player_left", { playerId: socket.id, name: p.name });
