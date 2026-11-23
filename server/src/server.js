@@ -233,18 +233,20 @@ app.put("/api/profile", async (req, res) => {
         // Update passport session
         Object.assign(req.user, updatedUser);
 
-        // Update in-memory player state
-        for (const [sId, p] of players) {
-            if (p.userId === req.user.id) {
-                if (updateData.displayName) {
-                    p.name = updateData.displayName;
+        // Update in-memory player state (only if name or avatar changed)
+        if (updateData.displayName || updateData.avatar !== undefined) {
+            for (const [sId, p] of players) {
+                if (p.userId === req.user.id) {
+                    if (updateData.displayName) {
+                        p.name = updateData.displayName;
+                    }
+                    io.emit("player_updated", {
+                        playerId: sId,
+                        userId: req.user.id,
+                        name: p.name,
+                        avatar: updatedUser.avatar,
+                    });
                 }
-                io.emit("player_updated", {
-                    playerId: sId,
-                    userId: req.user.id,
-                    name: p.name,
-                    avatar: updatedUser.avatar,
-                });
             }
         }
 
