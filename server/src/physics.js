@@ -352,9 +352,11 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
         (time - playerState.jumpBufferTime) <= config.jumpBuffer;
     const isGroundedOrCoyote = playerState.grounded || canCoyote;
 
+    let justJumped = false;
     if (isGroundedOrCoyote && (input.jump || canBuffer)) {
         vel.y = config.jumpForce;
         playerState.grounded = false;
+        justJumped = true;
         // Consume both timers to prevent double-jump.
         playerState.lastGroundedTime = -Infinity;
         playerState.jumpBufferTime = -Infinity;
@@ -368,6 +370,14 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
     let cy = pos.y + vel.y * dt;
     let cz = pos.z + vel.z * dt;
 
+    // If we just jumped, nudge the capsule up by collisionSkin * 2 to clear
+    // the floor surface before collision resolution runs. Without this,
+    // the resolver re-detects the floor and pushes the capsule back down,
+    // which then zeros the jump velocity.
+    if (justJumped) {
+        cy += config.collisionSkin * 4;
+    }
+
     // --- Collision detection and resolution ---
     const result = resolveCollisions(cx, cy, cz, config, isSolidAt);
     cx = result.x;
@@ -375,11 +385,12 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
     cz = result.z;
 
     // If collision pushed us upward (ground), zero downward velocity.
-    if (result.groundedThisFrame) {
+    // Skip grounding on the jump frame — we just left the ground intentionally.
+    if (result.groundedThisFrame && !justJumped) {
         if (vel.y < 0) vel.y = 0;
         playerState.grounded = true;
         playerState.lastGroundedTime = time;
-    } else {
+    } else if (!justJumped) {
         // Also do auxiliary ground probe for edge cases
         // (e.g., standing still on flat ground where capsule barely touches).
         const probed = probeGrounded(cx, cy, cz, config, isSolidAt);
@@ -395,23 +406,24 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
     // --- Correct velocity from collision resolution ---
     // If position was adjusted by collision, adjust velocity to match.
     // This prevents velocity from accumulating into walls.
-    const resolvedVX = (cx - (pos.x)) / dt;
-    const resolvedVZ = (cz - (pos.z)) / dt;
-    const resolvedVY = (cy - (pos.y)) / dt;
 
     // If the resolved position is different from what velocity predicted,
     // it means collision pushed us — dampen velocity on that axis.
+    // Skip Y velocity correction on the jump frame to prevent the floor
+    // collision from killing the jump impulse.
     const predictedX = pos.x + vel.x * dt;
-    const predictedY = pos.y + vel.y * dt;
     const predictedZ = pos.z + vel.z * dt;
 
     if (Math.abs(cx - predictedX) > config.collisionSkin) {
         vel.x = 0;
     }
-    if (Math.abs(cy - predictedY) > config.collisionSkin) {
-        // Only zero Y velocity in the blocked direction
-        if ((cy > predictedY && vel.y < 0) || (cy < predictedY && vel.y > 0)) {
-            vel.y = 0;
+    if (!justJumped) {
+        const predictedY = pos.y + vel.y * dt;
+        if (Math.abs(cy - predictedY) > config.collisionSkin) {
+            // Only zero Y velocity in the blocked direction
+            if ((cy > predictedY && vel.y < 0) || (cy < predictedY && vel.y > 0)) {
+                vel.y = 0;
+            }
         }
     }
     if (Math.abs(cz - predictedZ) > config.collisionSkin) {

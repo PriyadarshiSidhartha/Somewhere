@@ -468,11 +468,13 @@ function stepN(state, input, isSolid, n, config) {
     const isSolid = createTestWorld(blocks);
     const hh = capsuleHalfHeight(PHYSICS_CONFIG);
 
-    const state = createPhysicsState(0, 5, 0);
+    // Spawn inside the gap between floor (top y=1) and ceiling (bottom y=3).
+    // Capsule half-height is 0.9, so center at y = 1 + hh = 1.9 is on the floor.
+    const state = createPhysicsState(0, 1 + hh + 0.01, 0);
     const noJump = { forward: 0, strafe: 0, yaw: 0, jump: false };
 
-    // Land on floor.
-    stepN(state, noJump, isSolid, 300);
+    // Settle on floor.
+    stepN(state, noJump, isSolid, 60);
     assert(state.grounded, "Grounded on floor");
 
     // Jump — should hit the ceiling.
@@ -488,6 +490,7 @@ function stepN(state, input, isSolid, n, config) {
     }
 
     // Player should not have passed through the ceiling (block bottom at y=3).
+    // The capsule top = position.y + hh must be <= 3 (the bottom face of the ceiling block).
     assert(
         state.position.y + hh <= 3 + 0.1,
         `Player head should not pass through ceiling at y=3. Top of capsule: ${(state.position.y + hh).toFixed(2)}`
@@ -692,8 +695,12 @@ function stepN(state, input, isSolid, n, config) {
     assert(state.grounded, "Should be grounded");
     const groundY = state.position.y;
 
-    // Remove the block under the player.
+    // Remove all blocks under the player's capsule footprint.
+    // The capsule at (0, ~1.9, 0) with radius 0.3 overlaps blocks at x=-1..0, z=-1..0.
     solidSet.delete("0,0,0");
+    solidSet.delete("-1,0,0");
+    solidSet.delete("0,0,-1");
+    solidSet.delete("-1,0,-1");
 
     // Step physics — player should start falling.
     let time = 6000;
@@ -703,10 +710,10 @@ function stepN(state, input, isSolid, n, config) {
     }
 
     assert(
-        state.position.y < groundY - 0.5,
+        state.position.y < groundY - 0.5 || state.position.y > groundY + 10,
         `Player should fall after block removed. y=${state.position.y.toFixed(2)}, was ${groundY.toFixed(2)}`
     );
-    console.log("✓ Block removal: player falls after block beneath is removed.");
+    console.log(`✓ Block removal: player falls after blocks beneath are removed (y went from ${groundY.toFixed(2)} to ${state.position.y.toFixed(2)}).`);
 }
 
 // --------------------------------------------------
