@@ -68,10 +68,3 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser!
 | **Chat** | `Enter` to focus, type message, `Enter` to send |
 
 ---
-
-## 👥 Team Work Division
-
-- **Member 1 (Backend & Server)**: Express setup, Socket.IO event loops, server-authoritative movement simulation (`simulation.js`, `server.js`).
-- **Member 2 (Three.js & Frontend)**: 3D scene, first-person camera, lighting, crosshair, HUD, client prediction (`public/index.html`).
-- **Member 3 (Multiplayer & Blocks)**: Raycasting block selection, real-time block placement/removal sync, player representations (`worldState.js`, `server.js`).
-- **Member 4 (Database & Auth)**: Prisma schema, MongoDB persistence, Google OAuth login flow, session management (`auth.js`, `db.js`, `schema.prisma`).

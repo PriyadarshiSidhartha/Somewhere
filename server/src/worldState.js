@@ -9,6 +9,7 @@
 // once if the database is empty.
 
 const prisma = require("./db");
+const blockCatalog = require("./blockCatalog");
 
 // In-memory store: "x,y,z" -> { x, y, z, type, id }
 const blocks = new Map();
@@ -163,8 +164,7 @@ function isValidBlockCoord(x, y, z) {
 }
 
 function isValidBlockType(type) {
-    const ALLOWED_TYPES = ["dirt", "grass", "stone", "wood", "sand"];
-    return typeof type === "string" && ALLOWED_TYPES.includes(type);
+    return blockCatalog.isValidBlockId(type);
 }
 
 module.exports = {

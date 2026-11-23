@@ -25,6 +25,7 @@ const {
 } = require("./simulation");
 const world = require("./worldState");
 const prisma = require("./db");
+const blockCatalog = require("./blockCatalog");
 
 const app        = express();
 const httpServer = http.createServer(app);
@@ -53,6 +54,14 @@ app.use(express.static(path.join(__dirname, "../public")));
 // --------------------------------------------------
 
 mountAuthRoutes(app);
+
+// Block catalogue endpoint
+app.get("/api/blocks", (req, res) => {
+    res.json({
+        blocks: blockCatalog.getAllBlocks(),
+        defaultRecent: blockCatalog.DEFAULT_RECENT_BLOCKS,
+    });
+});
 
 // Health check
 app.get("/health", (req, res) => {
@@ -130,9 +139,14 @@ io.on("connection", async (socket) => {
     console.log(`${player.name} connected (userId: ${dbUser.id})`);
 
     // 1. Tell this client who they are + world config.
+    const initialRecent = (dbUser.recentBlocks && dbUser.recentBlocks.length > 0)
+        ? dbUser.recentBlocks
+        : blockCatalog.DEFAULT_RECENT_BLOCKS;
+
     socket.emit("welcome", {
         player: getPublicPlayerState(player),
         world: WORLD_CONFIG,
+        recentBlocks: initialRecent,
     });
 
     // 2. Send the full block world to this new client.
@@ -186,7 +200,8 @@ io.on("connection", async (socket) => {
         }
 
         const blockType = type || "dirt";
-        if (!world.isValidBlockType(blockType)) {
+        const resolvedBlock = blockCatalog.getBlock(blockType);
+        if (!resolvedBlock || !world.isValidBlockType(blockType)) {
             socket.emit("request_rejected", {
                 action: "block:place",
                 reason: "Invalid block type.",
@@ -195,7 +210,7 @@ io.on("connection", async (socket) => {
         }
 
         try {
-            const newBlock = await world.placeBlock(x, y, z, blockType);
+            const newBlock = await world.placeBlock(x, y, z, resolvedBlock.id);
             if (!newBlock) {
                 socket.emit("request_rejected", {
                     action: "block:place",
@@ -206,10 +221,31 @@ io.on("connection", async (socket) => {
 
             // Broadcast to ALL clients (including the sender, so their local
             // prediction is confirmed by the server).
-            io.emit("block:placed", { x, y, z, type: blockType });
-            console.log(`${player.name} placed ${blockType} at (${x},${y},${z})`);
+            io.emit("block:placed", { x, y, z, type: resolvedBlock.id });
+            console.log(`${player.name} placed ${resolvedBlock.id} at (${x},${y},${z})`);
         } catch (err) {
             console.error("block:place error:", err);
+        }
+    });
+
+    // --------------------------------------------------
+    // PLAYER: UPDATE RECENT BLOCKS (Profile Persistence)
+    // --------------------------------------------------
+
+    socket.on("player:recent_blocks", async (data) => {
+        if (!data || !Array.isArray(data.recentBlocks)) return;
+
+        const validIds = data.recentBlocks
+            .filter((id) => blockCatalog.isValidBlockId(id))
+            .slice(0, 10);
+
+        try {
+            await prisma.user.update({
+                where: { id: player.userId },
+                data: { recentBlocks: validIds },
+            });
+        } catch (err) {
+            console.error(`Failed to update recent blocks for ${player.name}:`, err);
         }
     });
 

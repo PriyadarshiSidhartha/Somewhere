@@ -132,6 +132,7 @@ function mountAuthRoutes(app) {
                         y: req.user.posY,
                         z: req.user.posZ,
                     },
+                    recentBlocks: req.user.recentBlocks || [],
                 },
             });
         } else {

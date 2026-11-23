@@ -105,35 +105,133 @@
             margin-top: 4px;
         }
 
-        /* Block type selector */
-        #block-selector {
+        /* ---- VERTICAL BLOCK DISCOVERY & SELECTION PANEL ---- */
+        #block-panel {
             position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 16px;
+            bottom: 24px;
+            width: 216px;
+            background: rgba(18, 22, 34, 0.88);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 8px;
             display: flex;
-            gap: 8px;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 8px 12px;
-            border-radius: 8px;
+            flex-direction: column;
+            gap: 6px;
+            user-select: none;
+            z-index: 20;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         }
 
-        .block-btn {
-            width: 44px;
-            height: 44px;
-            border: 2px solid transparent;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.65rem;
-            font-weight: bold;
-            color: #fff;
+        #block-search-bar {
+            position: relative;
             display: flex;
             align-items: center;
-            justify-content: center;
         }
 
-        .block-btn.active {
-            border-color: #fff;
+        #block-search-input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 6px;
+            padding: 6px 30px 6px 10px;
+            color: #fff;
+            font-size: 0.8rem;
+            outline: none;
+            font-family: inherit;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        #block-search-input:focus {
+            background: rgba(10, 14, 24, 0.85);
+            border-color: #7ecfff;
+            box-shadow: 0 0 6px rgba(126, 207, 255, 0.4);
+        }
+
+        #block-search-badge {
+            position: absolute;
+            right: 8px;
+            background: rgba(255, 255, 255, 0.15);
+            color: #aaa;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 4px;
+            pointer-events: none;
+        }
+
+        #block-slots {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .block-slot {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 6px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+            font-size: 0.78rem;
+            color: #ddd;
+        }
+
+        .block-slot:hover:not(.empty) {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .block-slot.active {
+            background: rgba(126, 207, 255, 0.2);
+            border-color: #7ecfff;
+            color: #fff;
+            font-weight: 600;
+            box-shadow: 0 0 8px rgba(126, 207, 255, 0.3);
+        }
+
+        .block-slot.empty {
+            cursor: default;
+            opacity: 0.35;
+            border: 1px dashed rgba(255, 255, 255, 0.15);
+        }
+
+        .slot-key {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #bbb;
+            flex-shrink: 0;
+        }
+
+        .block-slot.active .slot-key {
+            background: #7ecfff;
+            color: #0b1a2e;
+        }
+
+        .slot-swatch {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 0, 0, 0.3);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3), 0 1px 2px rgba(0, 0, 0, 0.4);
+            flex-shrink: 0;
+        }
+
+        .slot-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
         }
 
         /* Chat hint */
@@ -215,13 +313,16 @@
 
         <!-- Controls help (removed) -->
 
-        <!-- Block type selector -->
-        <div id="block-selector">
-            <div class="block-btn active" data-type="dirt" style="background:#8B6914" title="Dirt">Dirt</div>
-            <div class="block-btn" data-type="grass" style="background:#4a7c59" title="Grass">Grass</div>
-            <div class="block-btn" data-type="stone" style="background:#888" title="Stone">Stone</div>
-            <div class="block-btn" data-type="wood" style="background:#8B4513" title="Wood">Wood</div>
-            <div class="block-btn" data-type="sand" style="background:#c2b280" title="Sand">Sand</div>
+        <!-- Vertical Block Selection & Search Panel -->
+        <div id="block-panel">
+            <div id="block-search-bar">
+                <input type="text" id="block-search-input" placeholder="Search blocks... [F]" autocomplete="off"
+                    spellcheck="false" maxlength="30">
+                <span id="block-search-badge">F</span>
+            </div>
+            <div id="block-slots">
+                <!-- 10 dynamic slots rendered by JS -->
+            </div>
         </div>
 
         <!-- Chat hint -->
@@ -250,7 +351,7 @@
 
         // --- Camera (Third-Person Pivot-Orbit) ---
         const CAMERA_FOV = 60;              // Field of view (degrees)
-        const CAMERA_PIVOT_HEIGHT = 1;    // Pivot point height above player feet (upper-chest level)
+        const CAMERA_PIVOT_HEIGHT = 0.8;    // Pivot point height above player feet (upper-chest level)
         const CAMERA_ARM_LENGTH = 4.25;      // Distance from pivot to camera (orbit radius)
         const CAMERA_SHOULDER_OFFSET = 1.5; // Horizontal offset to the right (over-the-shoulder)
         const CAMERA_PITCH_MIN = -1.0;      // Max look-down (radians, ~-57°)
@@ -283,8 +384,14 @@
 
         let currentUser = null;
 
-        const meRes = await fetch('/api/me');
+        const [meRes, blocksRes] = await Promise.all([
+            fetch('/api/me'),
+            fetch('/api/blocks'),
+        ]);
         const meData = await meRes.json();
+        const blocksData = await blocksRes.json();
+        const blockCatalog = blocksData.blocks || [];
+        const defaultRecent = blocksData.defaultRecent || [];
 
         if (!meData.loggedIn) {
             // Not logged in — the login screen is already visible.
@@ -297,14 +404,14 @@
             // Set HUD name
             document.getElementById('hud-name').textContent = currentUser.displayName;
 
-            startGame(currentUser);
+            startGame(currentUser, blockCatalog, defaultRecent);
         }
 
         // ================================================================
         // STEP 2: THE GAME
         // ================================================================
 
-        function startGame(user) {
+        function startGame(user, blockCatalog, defaultRecent) {
 
             // ---- THREE.JS SCENE SETUP ----
 
@@ -360,9 +467,13 @@
                 }
             }
 
-            // Request pointer lock on click anywhere in the game (even in chat mode).
+            // Request pointer lock on click anywhere in the game (even in chat mode),
+            // except when interacting with the block discovery & search panel.
             window.addEventListener('click', (e) => {
-                if (e.target && e.target.closest && e.target.closest('#block-selector')) return;
+                if (document.activeElement === blockSearchInput && e.target !== blockSearchInput) {
+                    blockSearchInput.blur();
+                }
+                if (e.target && e.target.closest && (e.target.closest('#block-panel') || e.target.closest('#block-selector'))) return;
                 requestLock();
             });
 
@@ -477,25 +588,25 @@
             // BLOCK MANAGEMENT (CLIENT SIDE)
             // ================================================================
 
-            // Block colors by type.
-            const BLOCK_COLORS = {
-                dirt: 0x8B6914,
-                grass: 0x4a7c59,
-                stone: 0x888888,
-                wood: 0x8B4513,
-                sand: 0xc2b280,
-            };
+            // Build Three.js materials dynamically from the centralized block catalogue
+            const blockMaterials = {};
+            for (const b of blockCatalog) {
+                blockMaterials[b.id] = new THREE.MeshLambertMaterial({
+                    color: b.color,
+                    transparent: !!b.transparent,
+                    opacity: b.opacity !== undefined ? b.opacity : 1.0,
+                });
+            }
+            // Legacy alias for starter blocks
+            if (blockMaterials['wood_planks']) {
+                blockMaterials['wood'] = blockMaterials['wood_planks'];
+            }
 
             // Map "x,y,z" -> THREE.Mesh
             const blockMeshes = new Map();
 
             // Shared geometry for all blocks (1x1x1 cube).
             const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
-            // We create a unique material per color (5 total — small, fine).
-            const blockMaterials = {};
-            for (const [type, color] of Object.entries(BLOCK_COLORS)) {
-                blockMaterials[type] = new THREE.MeshLambertMaterial({ color });
-            }
 
             function blockKey(x, y, z) {
                 return `${x},${y},${z}`;
@@ -582,6 +693,11 @@
                 serverPos.z = data.player.position.z;
                 console.log('Welcome!', data.player.name, 'at', data.player.position);
                 updateHudPlayers();
+
+                // Load persistent recent blocks from server profile
+                if (data.recentBlocks && Array.isArray(data.recentBlocks)) {
+                    loadRecentBlocksFromServer(data.recentBlocks);
+                }
             });
 
             // --- Initial world blocks ---
@@ -719,7 +835,27 @@
                     return; // Block everything else while chatting.
                 }
 
-                // --- NORMAL GAMEPLAY INPUT ---
+                // --- NORMAL GAMEPLAY / UI INPUT ---
+                // If search input is focused, don't intercept keys for gameplay
+                if (document.activeElement === blockSearchInput) {
+                    return;
+                }
+
+                // Press "F" to focus block search input (discovery system)
+                if ((e.key === 'f' || e.key === 'F') && !chatMode) {
+                    e.preventDefault();
+                    blockSearchInput.focus();
+                    return;
+                }
+
+                // Number shortcuts 1-9 and 0 to select from visible block slots
+                if (!chatMode && ((e.key >= '1' && e.key <= '9') || e.key === '0')) {
+                    const slotIndex = e.key === '0' ? 9 : parseInt(e.key, 10) - 1;
+                    selectSlotByIndex(slotIndex);
+                    e.preventDefault();
+                    return;
+                }
+
                 // Enter chat mode with "/" key.
                 if (e.key === '/') {
                     e.preventDefault();
@@ -740,7 +876,7 @@
             });
 
             window.addEventListener('keyup', (e) => {
-                if (chatMode) return; // ignore key-ups during chat
+                if (chatMode || document.activeElement === blockSearchInput) return; // ignore key-ups during typing
                 const k = e.key.toLowerCase();
                 if (k in keys) keys[k] = false;
             });
@@ -980,77 +1116,258 @@
             });
 
             // ================================================================
-            // BLOCK INTERACTION (RAYCASTING)
+            // BLOCK DISCOVERY & SELECTION SYSTEM
             // ================================================================
 
-            const raycaster = new THREE.Raycaster();
-            raycaster.far = 6; // Can only reach blocks within 6 units.
+            const blockMap = new Map();
+            for (const b of blockCatalog) {
+                blockMap.set(b.id, b);
+            }
 
-            let selectedBlockType = 'dirt';
+            function getCatalogBlock(id) {
+                if (!id) return null;
+                return blockMap.get(id) || (id === 'wood' ? blockMap.get('wood_planks') : null);
+            }
 
-            // Block type selector buttons.
-            document.querySelectorAll('.block-btn').forEach((btn) => {
-                btn.addEventListener('click', (e) => {
-                    document.querySelectorAll('.block-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    selectedBlockType = btn.dataset.type;
-                });
+            // Player's 10 recently selected blocks (persisted in MongoDB user profile)
+            let recentBlocks = [];
+            if (user.recentBlocks && Array.isArray(user.recentBlocks) && user.recentBlocks.length > 0) {
+                recentBlocks = user.recentBlocks.filter(id => blockMap.has(id));
+            }
+            if (recentBlocks.length < 10) {
+                for (const defId of defaultRecent) {
+                    if (!recentBlocks.includes(defId) && blockMap.has(defId)) {
+                        recentBlocks.push(defId);
+                    }
+                    if (recentBlocks.length >= 10) break;
+                }
+            }
+
+            function loadRecentBlocksFromServer(serverRecent) {
+                if (!Array.isArray(serverRecent)) return;
+                const valid = serverRecent.filter(id => blockMap.has(id));
+                if (valid.length > 0) {
+                    recentBlocks = valid;
+                    if (!recentBlocks.includes(selectedBlockId)) {
+                        selectedBlockId = recentBlocks[0];
+                    }
+                    renderSlots();
+                }
+            }
+
+            let selectedBlockId = recentBlocks[0] || 'dirt';
+            let currentSearchQuery = '';
+
+            const blockPanel = document.getElementById('block-panel');
+            const blockSearchInput = document.getElementById('block-search-input');
+            const blockSlotsContainer = document.getElementById('block-slots');
+
+            let currentSlots = []; // Currently displayed 10 slots (either search results or recent blocks)
+
+            function updateRecentBlocks(blockId) {
+                const idx = recentBlocks.indexOf(blockId);
+                if (idx !== -1) {
+                    recentBlocks.splice(idx, 1);
+                }
+                recentBlocks.unshift(blockId);
+                if (recentBlocks.length > 10) {
+                    recentBlocks = recentBlocks.slice(0, 10);
+                }
+
+                // Persist recent blocks to server (MongoDB profile)
+                if (socket.connected) {
+                    socket.emit('player:recent_blocks', { recentBlocks });
+                }
+            }
+
+            function selectBlock(blockId) {
+                if (!blockMap.has(blockId)) return;
+                selectedBlockId = blockId;
+                updateRecentBlocks(blockId);
+                renderSlots();
+            }
+
+            function selectSlotByIndex(index) {
+                if (index < 0 || index >= currentSlots.length) return;
+                const block = currentSlots[index];
+                if (block) {
+                    selectBlock(block.id);
+                }
+            }
+
+            function getActiveSlots() {
+                if (currentSearchQuery === '') {
+                    return recentBlocks.map(id => getCatalogBlock(id)).filter(Boolean);
+                }
+                const q = currentSearchQuery.toLowerCase();
+                const matches = blockCatalog.filter(b =>
+                    b.name.toLowerCase().includes(q) || b.id.toLowerCase().includes(q)
+                );
+                return matches.slice(0, 10);
+            }
+
+            function renderSlots() {
+                currentSlots = getActiveSlots();
+                blockSlotsContainer.innerHTML = '';
+
+                for (let i = 0; i < 10; i++) {
+                    const block = currentSlots[i] || null;
+                    const keyLabel = (i + 1) % 10; // 1 to 9, then 0 for slot 10
+
+                    const slotEl = document.createElement('div');
+                    slotEl.className = 'block-slot' + (block ? '' : ' empty');
+                    if (block && block.id === selectedBlockId) {
+                        slotEl.classList.add('active');
+                    }
+
+                    const keyEl = document.createElement('span');
+                    keyEl.className = 'slot-key';
+                    keyEl.textContent = keyLabel;
+                    slotEl.appendChild(keyEl);
+
+                    if (block) {
+                        const swatchEl = document.createElement('span');
+                        swatchEl.className = 'slot-swatch';
+                        swatchEl.style.backgroundColor = block.hex;
+                        slotEl.appendChild(swatchEl);
+
+                        const nameEl = document.createElement('span');
+                        nameEl.className = 'slot-name';
+                        nameEl.textContent = block.name;
+                        slotEl.appendChild(nameEl);
+
+                        slotEl.title = `${block.name} (Key: ${keyLabel})`;
+
+                        slotEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            selectBlock(block.id);
+                        });
+                    } else {
+                        const emptyNameEl = document.createElement('span');
+                        emptyNameEl.className = 'slot-name';
+                        emptyNameEl.style.opacity = '0.4';
+                        emptyNameEl.textContent = currentSearchQuery ? 'No match' : 'Empty';
+                        slotEl.appendChild(emptyNameEl);
+                    }
+
+                    blockSlotsContainer.appendChild(slotEl);
+                }
+            }
+
+            // Search input live filtering
+            blockSearchInput.addEventListener('input', () => {
+                currentSearchQuery = blockSearchInput.value.trim();
+                renderSlots();
             });
 
-            // Cast a ray from camera center and find the closest block.
+            // Enter auto-selects top result (if present) and exits search input mode; Escape blurs
+            blockSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (currentSlots.length > 0 && currentSlots[0]) {
+                        selectBlock(currentSlots[0].id);
+                    }
+                    blockSearchInput.blur();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    blockSearchInput.blur();
+                }
+            });
+
+            // Initial slot rendering
+            renderSlots();
+
+            // ================================================================
+            // BLOCK INTERACTION (RAYCASTING, PLACEMENT & REMOVAL)
+            // ================================================================
+
+            // In 3rd person, the camera is ~4.5 units behind the player.
+            // raycaster.far = 30 ensures rays from the camera reach the world in front,
+            // while PLAYER_REACH ensures blocks are only placed/removed within 7.5 units of the character.
+            const raycaster = new THREE.Raycaster();
+            raycaster.far = 30;
+            const PLAYER_REACH = 7.5; // Max interaction distance from player
+
+            // Subtle wireframe box that highlights the block currently targeted
+            const highlightGeo = new THREE.BoxGeometry(1.005, 1.005, 1.005);
+            const highlightMat = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.6,
+            });
+            const highlightBox = new THREE.Mesh(highlightGeo, highlightMat);
+            highlightBox.visible = false;
+            scene.add(highlightBox);
+
+            // Cast a ray from crosshair (center of screen) and find the closest reachable block.
             function getTargetBlock() {
-                // Ray from center of screen.
                 raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
 
                 const meshArray = Array.from(blockMeshes.values());
                 const intersects = raycaster.intersectObjects(meshArray);
 
-                if (intersects.length === 0) return null;
-
-                return intersects[0]; // closest hit
-            }
-
-            // Left-click: remove the block you're looking at.
-            document.addEventListener('mousedown', (e) => {
-                if (!pointerLocked || chatMode) return;
-                if (e.button !== 0) return; // only left button
-
-                const hit = getTargetBlock();
-                if (!hit) return;
-
-                const { x, y, z } = hit.object.userData;
-                socket.emit('block:remove', { x, y, z });
-                // Optimistic local removal (server confirms/corrects).
-                deleteBlock(x, y, z);
-            });
-
-            // Right-click: place a block adjacent to the face you're looking at.
-            document.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                if (!pointerLocked || chatMode) return;
-
-                const hit = getTargetBlock();
-                if (!hit) return;
-
-                // The face normal tells us WHICH face we're pointing at.
-                const normal = hit.face.normal.clone();
-                normal.transformDirection(hit.object.matrixWorld);
-
-                const { x, y, z } = hit.object.userData;
-                const nx = Math.round(x + normal.x);
-                const ny = Math.round(y + normal.y);
-                const nz = Math.round(z + normal.z);
-
-                // Don't place a block inside the player.
-                if (Math.abs(localPos.x - nx) < 0.6 &&
-                    Math.abs(localPos.y - ny) < 1.2 &&
-                    Math.abs(localPos.z - nz) < 0.6) {
-                    return;
+                for (const hit of intersects) {
+                    // Check reach distance from player's body, not from the camera
+                    const distFromPlayer = Math.hypot(
+                        hit.point.x - localPos.x,
+                        hit.point.y - (localPos.y - 0.4),
+                        hit.point.z - localPos.z
+                    );
+                    if (distFromPlayer <= PLAYER_REACH) {
+                        return hit;
+                    }
                 }
 
-                socket.emit('block:place', { x: nx, y: ny, z: nz, type: selectedBlockType });
-                // Optimistic local add.
-                addBlock(nx, ny, nz, selectedBlockType);
+                return null;
+            }
+
+            // Left-click (button 0): remove block
+            // Right-click (button 2): place block
+            document.addEventListener('mousedown', (e) => {
+                if (!pointerLocked || chatMode || document.activeElement === blockSearchInput) return;
+
+                if (e.button === 0) {
+                    // Left-click: remove the block you're looking at
+                    const hit = getTargetBlock();
+                    if (!hit) return;
+
+                    const { x, y, z } = hit.object.userData;
+                    socket.emit('block:remove', { x, y, z });
+                    // Optimistic local removal
+                    deleteBlock(x, y, z);
+                } else if (e.button === 2) {
+                    // Right-click: place a block adjacent to the targeted face
+                    const hit = getTargetBlock();
+                    if (!hit || !hit.face) return;
+
+                    const normal = hit.face.normal.clone();
+                    normal.transformDirection(hit.object.matrixWorld);
+
+                    const { x, y, z } = hit.object.userData;
+                    const nx = Math.round(x + normal.x);
+                    const ny = Math.round(y + normal.y);
+                    const nz = Math.round(z + normal.z);
+
+                    // Don't place a block inside the player character
+                    const feetY = localPos.y - 0.9;
+                    const headY = localPos.y + 0.9;
+                    if (Math.abs(localPos.x - nx) < 0.65 &&
+                        Math.abs(localPos.z - nz) < 0.65 &&
+                        ny >= Math.floor(feetY) && ny <= Math.ceil(headY)) {
+                        return;
+                    }
+
+                    const blockType = selectedBlockId || 'dirt';
+                    socket.emit('block:place', { x: nx, y: ny, z: nz, type: blockType });
+                    // Optimistic local add
+                    addBlock(nx, ny, nz, blockType);
+                }
+            });
+
+            // Prevent native browser context menu from triggering on right click
+            document.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
             });
 
             // ================================================================
@@ -1117,6 +1434,19 @@
 
                 // --- UPDATE THIRD-PERSON CAMERA ---
                 updateCamera();
+
+                // --- UPDATE TARGET BLOCK HIGHLIGHT ---
+                const targetHit = (pointerLocked && !chatMode) ? getTargetBlock() : null;
+                if (targetHit) {
+                    highlightBox.position.set(
+                        targetHit.object.userData.x,
+                        targetHit.object.userData.y,
+                        targetHit.object.userData.z
+                    );
+                    highlightBox.visible = true;
+                } else {
+                    highlightBox.visible = false;
+                }
 
                 // --- POSITION LOCAL CHAT SPRITE (follows player each frame) ---
                 if (localChatSprite) {
