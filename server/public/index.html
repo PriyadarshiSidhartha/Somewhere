@@ -1481,11 +1481,70 @@
             scene.add(ambientLight);
 
             const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-            sun.position.set(10, 20, 10);
             sun.castShadow = true;
-            sun.shadow.mapSize.width = 1024;
-            sun.shadow.mapSize.height = 1024;
+            const SHADOW_SETTINGS = window.SHADOW_SETTINGS = {
+                fullStrengthRadius: 8, // Full-strength shadow area is 16x16 world units.
+                fadeLength: 4,         // Soft fade beyond that area, in world units.
+                mapSize: 2048,
+                followStep: 0.5,        // Smaller values follow more smoothly, at some cost to stability.
+                lightOffsetX: 4,         // Smaller horizontal offsets keep shadows closer to objects.
+                lightOffsetY: 20,
+                lightOffsetZ: 4,
+                bias: -0.0001,
+            };
+            sun.position.set(SHADOW_SETTINGS.lightOffsetX, SHADOW_SETTINGS.lightOffsetY, SHADOW_SETTINGS.lightOffsetZ);
+            const shadowFadeWidth = { value: 0 };
+            function updateShadowSettings() {
+                const fadeLength = Math.max(0, SHADOW_SETTINGS.fadeLength);
+                const outerRadius = Math.max(1, SHADOW_SETTINGS.fullStrengthRadius + fadeLength);
+                const shadowCamera = sun.shadow.camera;
+                shadowCamera.left = -outerRadius;
+                shadowCamera.right = outerRadius;
+                shadowCamera.top = outerRadius;
+                shadowCamera.bottom = -outerRadius;
+                shadowCamera.near = 0.5;
+                shadowCamera.far = 100;
+                shadowCamera.updateProjectionMatrix();
+                sun.shadow.mapSize.set(SHADOW_SETTINGS.mapSize, SHADOW_SETTINGS.mapSize);
+                sun.shadow.bias = SHADOW_SETTINGS.bias;
+                sun.position.set(
+                    sun.target.position.x + SHADOW_SETTINGS.lightOffsetX,
+                    sun.target.position.y + SHADOW_SETTINGS.lightOffsetY,
+                    sun.target.position.z + SHADOW_SETTINGS.lightOffsetZ
+                );
+                shadowFadeWidth.value = fadeLength / (2 * outerRadius);
+                if (sun.shadow.map) {
+                    sun.shadow.map.dispose();
+                    sun.shadow.map = null;
+                }
+            }
+            updateShadowSettings();
+            window.updateShadowSettings = updateShadowSettings;
             scene.add(sun);
+            scene.add(sun.target);
+
+            function addShadowEdgeFade(material) {
+                material.onBeforeCompile = (shader) => {
+                    shader.uniforms.uShadowFadeWidth = shadowFadeWidth;
+                    const shadowChunk = THREE.ShaderChunk.shadowmap_pars_fragment
+                        .replace(
+                            '#ifdef USE_SHADOWMAP',
+                            'uniform float uShadowFadeWidth;\n#ifdef USE_SHADOWMAP'
+                        )
+                        .replace(
+                            'return mix( 1.0, shadow, shadowIntensity );',
+                            `float edgeDistance = min( min( shadowCoord.x, 1.0 - shadowCoord.x ), min( shadowCoord.y, 1.0 - shadowCoord.y ) );
+                            float edgeFade = 1.0;
+                            if ( uShadowFadeWidth > 0.0 ) edgeFade = smoothstep( 0.0, uShadowFadeWidth, edgeDistance );
+                            return mix( 1.0, shadow, shadowIntensity * edgeFade );`
+                        );
+                    shader.fragmentShader = shader.fragmentShader.replace(
+                        '#include <shadowmap_pars_fragment>',
+                        shadowChunk
+                    );
+                };
+                material.customProgramCacheKey = () => 'shadow-edge-fade-v1';
+            }
 
             // ================================================================
             // THIRD-PERSON CAMERA + CUSTOM MOUSE LOOK
@@ -1738,11 +1797,13 @@
             // Build Three.js materials dynamically from the centralized block catalogue
             const blockMaterials = {};
             for (const b of blockCatalog) {
-                blockMaterials[b.id] = new THREE.MeshLambertMaterial({
+                const material = new THREE.MeshLambertMaterial({
                     color: b.color,
                     transparent: !!b.transparent,
                     opacity: b.opacity !== undefined ? b.opacity : 1.0,
                 });
+                addShadowEdgeFade(material);
+                blockMaterials[b.id] = material;
             }
             // Legacy alias for starter blocks
             if (blockMaterials['wood_planks']) {
@@ -3825,6 +3886,19 @@
                     hudCoords.textContent =
                         `x: ${localPos.x.toFixed(1)} | y: ${localPos.y.toFixed(1)} | z: ${localPos.z.toFixed(1)}`;
                 }
+
+                // Keep a high-resolution shadow frustum centered near the player.
+                // Snap in half-unit steps to avoid visible shadow-map shimmer.
+                const followStep = Math.max(0.01, SHADOW_SETTINGS.followStep);
+                const shadowX = Math.round(localPos.x / followStep) * followStep;
+                const shadowY = Math.round(localPos.y / followStep) * followStep;
+                const shadowZ = Math.round(localPos.z / followStep) * followStep;
+                sun.target.position.set(shadowX, shadowY, shadowZ);
+                sun.position.set(
+                    shadowX + SHADOW_SETTINGS.lightOffsetX,
+                    shadowY + SHADOW_SETTINGS.lightOffsetY,
+                    shadowZ + SHADOW_SETTINGS.lightOffsetZ
+                );
 
                 renderer.render(scene, camera);
             }
