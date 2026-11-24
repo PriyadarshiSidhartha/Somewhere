@@ -3562,6 +3562,9 @@
                         predictedState.velocity.y = 0;
                         predictedState.velocity.z = 0;
                         predictedState.grounded = false;
+                        predictedState.lastGroundedTime = -Infinity;
+                        predictedState.jumpBufferTime = -Infinity;
+                        predictedState.jumpWasPressed = false;
 
                         serverState.position.x = spawnX;
                         serverState.position.y = spawnY;
@@ -3570,6 +3573,9 @@
                         serverState.velocity.y = 0;
                         serverState.velocity.z = 0;
                         serverState.grounded = false;
+                        serverState.lastGroundedTime = -Infinity;
+                        serverState.jumpBufferTime = -Infinity;
+                        serverState.jumpWasPressed = false;
 
                         prevPhysPos.x = spawnX;
                         prevPhysPos.y = spawnY;
@@ -3582,6 +3588,7 @@
                         smoothOffsetX = 0;
                         smoothOffsetY = 0;
                         smoothOffsetZ = 0;
+                        clientAccumulator = 0;
                         inputHistory.length = 0;
                         keys.w = keys.a = keys.s = keys.d = false;
                         jumpPressed = false;
@@ -3599,10 +3606,33 @@
                         // Wait for server respawn confirmation and 2 render frames so scene is settled
                         await new Promise((resolve) => {
                             let confirmed = false;
-                            const finish = () => {
+                            const finish = (data) => {
                                 if (confirmed) return;
                                 confirmed = true;
                                 socket.off('player:respawn_confirmed', finish);
+                                if (data && data.position) {
+                                    const position = data.position;
+                                    const velocity = data.velocity || { x: 0, y: 0, z: 0 };
+                                    for (const state of [predictedState, serverState]) {
+                                        state.position.x = position.x;
+                                        state.position.y = position.y;
+                                        state.position.z = position.z;
+                                        state.velocity.x = velocity.x;
+                                        state.velocity.y = velocity.y;
+                                        state.velocity.z = velocity.z;
+                                        state.grounded = false;
+                                        state.lastGroundedTime = -Infinity;
+                                        state.jumpBufferTime = -Infinity;
+                                        state.jumpWasPressed = false;
+                                    }
+                                    prevPhysPos.x = localPos.x = position.x;
+                                    prevPhysPos.y = localPos.y = position.y;
+                                    prevPhysPos.z = localPos.z = position.z;
+                                    clientAccumulator = 0;
+                                }
+                                // Resume local simulation with the server's confirmed
+                                // spawn state while the screen fades back in.
+                                isRespawning = false;
                                 requestAnimationFrame(() => {
                                     requestAnimationFrame(resolve);
                                 });

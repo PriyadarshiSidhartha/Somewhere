@@ -519,6 +519,10 @@ io.on("connection", async (socket) => {
         p.physics.velocity.y = 0;
         p.physics.velocity.z = 0;
         p.physics.grounded = false;
+        p.physics.lastGroundedTime = -Infinity;
+        p.physics.jumpBufferTime = -Infinity;
+        p.physics.jumpWasPressed = false;
+        p.accumulator = 0;
 
         resetPlayerMovementInput(p);
 
