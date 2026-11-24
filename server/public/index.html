@@ -1156,6 +1156,10 @@
         const CAMERA_PITCH_MIN = -1.0;      // Max look-down (radians, ~-57°)
         const CAMERA_PITCH_MAX = 0.8;       // Max look-up (radians, ~46°)
         const CAMERA_MIN_HEIGHT = 0.3;      // Minimum camera height above ground (avoid going underground)
+        const CAMERA_COLLISION_RADIUS = 0.22; // Camera clearance around the lens to keep it out of block corners.
+        const CAMERA_COLLISION_STEP = 0.08;   // Sweep spacing along the camera boom.
+        const CAMERA_COLLISION_MARGIN = 0.12; // Extra pull-in after the first obstruction.
+        const CAMERA_COLLISION_RECOVERY_SPEED = 5.0; // Smoothly extend the camera after an obstruction clears.
 
         // --- Camera Positional Sway & Follow ---
         const CAMERA_SWAY_ENABLED = true;
@@ -1572,6 +1576,7 @@
             let currentPivotY = null;
             let currentPivotZ = null;
             let swayOffsetX = 0;
+            let currentCameraArmDistance = Math.hypot(CAMERA_ARM_LENGTH, CAMERA_SHOULDER_OFFSET);
 
             function updateCamera(dt = 0.016) {
                 // ---- Player mesh ----
@@ -1660,6 +1665,43 @@
                 // ---- Clamp camera height above ground ----
                 if (camY < CAMERA_MIN_HEIGHT) camY = CAMERA_MIN_HEIGHT;
 
+                // ---- Sweep the existing camera boom against the block world ----
+                // Pull in immediately on obstruction, then ease back out when clear.
+                const boomX = camX - currentPivotX;
+                const boomY = camY - currentPivotY;
+                const boomZ = camZ - currentPivotZ;
+                const boomLength = Math.hypot(boomX, boomY, boomZ);
+                if (boomLength > 0) {
+                    const dirX = boomX / boomLength;
+                    const dirY = boomY / boomLength;
+                    const dirZ = boomZ / boomLength;
+                    let allowedDistance = boomLength;
+
+                    const sweepSteps = Math.ceil(boomLength / CAMERA_COLLISION_STEP);
+                    for (let i = 1; i <= sweepSteps; i++) {
+                        const distance = Math.min(i * CAMERA_COLLISION_STEP, boomLength);
+                        const sampleX = currentPivotX + dirX * distance;
+                        const sampleY = currentPivotY + dirY * distance;
+                        const sampleZ = currentPivotZ + dirZ * distance;
+                        if (cameraPositionCollides(sampleX, sampleY, sampleZ)) {
+                            allowedDistance = Math.max(0.15, distance - CAMERA_COLLISION_MARGIN);
+                            break;
+                        }
+                    }
+
+                    if (allowedDistance < currentCameraArmDistance) {
+                        currentCameraArmDistance = allowedDistance;
+                    } else {
+                        const recovery = 1 - Math.exp(-CAMERA_COLLISION_RECOVERY_SPEED * Math.max(0, dt));
+                        currentCameraArmDistance += (allowedDistance - currentCameraArmDistance) * recovery;
+                    }
+
+                    const cameraDistance = Math.min(boomLength, currentCameraArmDistance);
+                    camX = currentPivotX + dirX * cameraDistance;
+                    camY = currentPivotY + dirY * cameraDistance;
+                    camZ = currentPivotZ + dirZ * cameraDistance;
+                }
+
                 camera.position.set(camX, camY, camZ);
 
                 // ---- Look FORWARD (not at the player) ----
@@ -1698,6 +1740,34 @@
 
             function blockKey(x, y, z) {
                 return `${x},${y},${z}`;
+            }
+
+            // Treat the camera as a small volume rather than a point so it stays
+            // clear of block faces and corners while the boom is swept each frame.
+            function cameraPositionCollides(x, y, z) {
+                const radius = CAMERA_COLLISION_RADIUS;
+                const minX = Math.ceil(x - radius - 0.5);
+                const maxX = Math.floor(x + radius + 0.5);
+                const minY = Math.ceil(y - radius - 0.5);
+                const maxY = Math.floor(y + radius + 0.5);
+                const minZ = Math.ceil(z - radius - 0.5);
+                const maxZ = Math.floor(z + radius + 0.5);
+
+                for (let bx = minX; bx <= maxX; bx++) {
+                    for (let by = minY; by <= maxY; by++) {
+                        for (let bz = minZ; bz <= maxZ; bz++) {
+                            if (
+                                blockMeshes.has(blockKey(bx, by, bz)) &&
+                                Math.abs(x - bx) <= 0.5 + radius &&
+                                Math.abs(y - by) <= 0.5 + radius &&
+                                Math.abs(z - bz) <= 0.5 + radius
+                            ) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
             }
 
             function addBlock(x, y, z, type) {
