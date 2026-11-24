@@ -2029,7 +2029,20 @@
                 element.setAttribute('role', 'status');
                 const messageEl = document.createElement('span');
                 messageEl.className = 'notification-message';
-                messageEl.textContent = message;
+                if (options.messageParts) {
+                    for (const part of options.messageParts) {
+                        const content = document.createTextNode(part.text || '');
+                        if (part.bold) {
+                            const emphasis = document.createElement('strong');
+                            emphasis.appendChild(content);
+                            messageEl.appendChild(emphasis);
+                        } else {
+                            messageEl.appendChild(content);
+                        }
+                    }
+                } else {
+                    messageEl.textContent = message;
+                }
                 element.appendChild(messageEl);
 
                 const entry = { element, timer: null };
@@ -2627,10 +2640,14 @@
                 });
 
                 socket.on('friend:pinged', (data) => {
-                    const message = data.fromWorld
-                        ? `🔔 ${data.fromName} pinged you from ${data.fromWorld}`
-                        : `🔔 ${data.fromName} pinged you`;
-                    pushNotification(message, {
+                    const messageParts = [
+                        { text: '🔔 ' },
+                        { text: data.fromName || 'A friend', bold: true },
+                        { text: data.fromWorld ? ' pinged you from ' : ' pinged you' },
+                    ];
+                    if (data.fromWorld) messageParts.push({ text: data.fromWorld, bold: true });
+                    pushNotification('', {
+                        messageParts,
                         duration: 8000,
                         action: data.showFriendButton ? {
                             label: 'Friend +',
