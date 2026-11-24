@@ -290,13 +290,28 @@ app.get("/api/players/:socketId", async (req, res) => {
     try {
         const targetUser = await prisma.user.findUnique({
             where: { id: targetPlayer.userId },
-            select: { id: true, displayName: true, avatar: true },
+            select: {
+                id: true,
+                displayName: true,
+                avatar: true,
+                showWorldToFriends: true,
+                lastActive: true,
+            },
         });
         if (!targetUser) return res.status(404).json({ error: "Player not found." });
         const friendship = await prisma.friendship.findUnique({
             where: { userId_friendId: { userId: req.user.id, friendId: targetUser.id } },
         });
-        res.json({ ...targetUser, isFriend: !!friendship });
+        // This route only resolves a player currently in the live player map,
+        // so presence should follow that authoritative lookup rather than the
+        // separately maintained friend-presence cache.
+        const isOnline = true;
+        res.json({
+            ...targetUser,
+            isFriend: !!friendship,
+            isOnline,
+            currentWorld: isOnline && friendship && targetUser.showWorldToFriends ? CURRENT_WORLD_NAME : null,
+        });
     } catch (err) {
         console.error("Failed to load player profile:", err);
         res.status(500).json({ error: "Failed to load player profile." });

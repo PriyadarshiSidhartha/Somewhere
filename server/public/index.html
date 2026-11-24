@@ -611,18 +611,8 @@
             color: #ffffff;
         }
 
-        .btn-remove-friend {
-            background: rgba(248, 113, 113, 0.08);
-            border: 1px solid rgba(248, 113, 113, 0.22);
-            color: #fecaca;
-            font-size: 0.62rem;
-            font-weight: 600;
-            padding: 2px 6px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .btn-remove-friend:hover { background: rgba(248, 113, 113, 0.2); }
+        .btn-ping:disabled { opacity: 0.45; cursor: default; }
+        .btn-ping:disabled:hover { background: rgba(255, 255, 255, 0.08); color: #e5e7eb; }
 
         .friends-empty {
             font-size: 0.68rem;
@@ -631,61 +621,54 @@
             padding: 8px 4px;
         }
 
-        /* Toast notification */
-        #game-toast {
+        #notification-holder {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(24, 24, 28, 0.94);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-            border-radius: 8px;
-            padding: 8px 14px;
-            font-size: 0.8rem;
-            color: #f3f4f6;
-            pointer-events: none;
-            opacity: 0;
-            transform: translateY(-10px);
-            transition: opacity 0.3s, transform 0.3s;
-            z-index: 100;
-        }
-
-        #game-toast.show {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        #friend-ping-notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
+            top: 16px;
+            right: 16px;
+            width: min(440px, calc(100vw - 32px));
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
             z-index: 120;
+            pointer-events: none;
+            transition: top 0.2s ease;
+        }
+
+        .notification-item {
             display: flex;
             align-items: center;
             gap: 12px;
-            max-width: min(440px, calc(100vw - 40px));
+            width: fit-content;
+            max-width: 100%;
             padding: 10px 12px;
-            background: rgba(24, 24, 28, 0.96);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-            border-radius: 9px;
-            color: #f3f4f6;
+            background: rgba(22, 22, 26, 0.75);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.38);
+            border-radius: 10px;
             font-size: 0.82rem;
+            color: #f3f4f6;
             opacity: 0;
             transform: translateY(-10px);
-            pointer-events: none;
-            transition: opacity 0.25s, transform 0.25s;
+            transition: opacity 0.25s ease, transform 0.25s ease;
         }
 
-        #friend-ping-notification.show {
+        .notification-item.show {
             opacity: 1;
             transform: translateY(0);
             pointer-events: auto;
         }
 
-        #friend-ping-message { flex: 1; }
+        .notification-item.exiting {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
 
-        #friend-ping-add-button {
+        .notification-message { flex: 1; }
+
+        .notification-action {
             flex-shrink: 0;
             padding: 5px 9px;
             border: 1px solid rgba(255, 255, 255, 0.2);
@@ -697,7 +680,7 @@
             cursor: pointer;
         }
 
-        #friend-ping-add-button:disabled { opacity: 0.65; cursor: default; }
+        .notification-action:disabled { opacity: 0.65; cursor: default; }
 
         #player-profile-card {
             display: block;
@@ -768,7 +751,17 @@
             justify-content: center;
         }
 
-        #player-friend-button {
+        .player-profile-activity {
+            min-height: 1.4em;
+            margin: 0 0 12px;
+            color: #b8c2cc;
+            font-size: 0.78rem;
+        }
+
+        .player-profile-activity .online { color: #86efac; }
+        .player-profile-activity .offline { color: #9ca3af; }
+
+        .player-profile-action {
             width: 100%;
             padding: 8px 12px;
             border: 1px solid rgba(255, 255, 255, 0.22);
@@ -781,8 +774,9 @@
             cursor: pointer;
         }
 
-        #player-friend-button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
-        #player-friend-button:disabled { opacity: 0.65; cursor: default; }
+        .player-profile-action + .player-profile-action { margin-top: 7px; }
+        .player-profile-action:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+        .player-profile-action:disabled { opacity: 0.65; cursor: default; }
         #player-friend-button.remove-mode { border-color: rgba(248, 113, 113, 0.4); color: #fecaca; }
 
         /* ---- VERTICAL BLOCK DISCOVERY & SELECTION PANEL ---- */
@@ -1127,12 +1121,8 @@
             </div>
         </div>
 
-        <!-- Toast notification container -->
-        <div id="game-toast"></div>
-        <div id="friend-ping-notification" role="status" aria-live="polite">
-            <span id="friend-ping-message"></span>
-            <button id="friend-ping-add-button" type="button">Friend +</button>
-        </div>
+        <!-- Stacked toast and friend-ping notifications -->
+        <div id="notification-holder" aria-live="polite"></div>
 
         <!-- Screen-facing profile card for a targeted player -->
         <div id="player-profile-card" role="dialog" aria-label="Player profile">
@@ -1142,7 +1132,9 @@
                 <div id="player-profile-placeholder" class="user-avatar-placeholder">👤</div>
             </div>
             <h2 id="player-profile-name">Player</h2>
-            <button id="player-friend-button" type="button">Friend +</button>
+            <div id="player-profile-activity" class="player-profile-activity"></div>
+            <button id="player-ping-button" class="player-profile-action" type="button" hidden>Ping</button>
+            <button id="player-friend-button" class="player-profile-action" type="button">Friend +</button>
         </div>
 
         <!-- Chat hint -->
@@ -1532,8 +1524,7 @@
                     e.target.closest('#info-panel') ||
                     e.target.closest('#block-panel') ||
                     e.target.closest('#player-profile-card') ||
-                    e.target.closest('#friend-ping-notification') ||
-                    e.target.closest('#game-toast')
+                    e.target.closest('#notification-holder')
                 )) return;
                 requestLock();
             });
@@ -1877,16 +1868,72 @@
             // FLOATING TOAST NOTIFICATIONS
             // ================================================================
 
-            let toastTimer = null;
+            const notificationHolder = document.getElementById('notification-holder');
+            const activeNotifications = [];
+
+            function syncNotificationPosition() {
+                const profileCard = document.getElementById('player-profile-card');
+                notificationHolder.style.top = profileCard && profileCard.classList.contains('visible')
+                    ? `${Math.max(16, profileCard.getBoundingClientRect().bottom + 12)}px`
+                    : '16px';
+            }
+            window.addEventListener('resize', syncNotificationPosition);
+
+            function removeNotification(entry, immediate = false) {
+                const index = activeNotifications.indexOf(entry);
+                if (index >= 0) activeNotifications.splice(index, 1);
+                clearTimeout(entry.timer);
+                if (immediate) {
+                    entry.element.remove();
+                    return;
+                }
+                entry.element.classList.remove('show');
+                entry.element.classList.add('exiting');
+                setTimeout(() => entry.element.remove(), 260);
+            }
+
+            function pushNotification(message, options = {}) {
+                while (activeNotifications.length >= 6) removeNotification(activeNotifications[0]);
+
+                const element = document.createElement('div');
+                element.className = 'notification-item';
+                element.setAttribute('role', 'status');
+                const messageEl = document.createElement('span');
+                messageEl.className = 'notification-message';
+                messageEl.textContent = message;
+                element.appendChild(messageEl);
+
+                const entry = { element, timer: null };
+                if (options.action) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'notification-action';
+                    button.textContent = options.action.label;
+                    button.addEventListener('click', async () => {
+                        button.disabled = true;
+                        button.textContent = 'Adding…';
+                        try {
+                            await options.action.run();
+                            button.textContent = 'Friend ✓';
+                        } catch (err) {
+                            button.disabled = false;
+                            button.textContent = options.action.label;
+                            showToast(err.message);
+                        }
+                    });
+                    element.appendChild(button);
+                }
+
+                activeNotifications.push(entry);
+                notificationHolder.appendChild(element);
+                requestAnimationFrame(() => element.classList.add('show'));
+                syncNotificationPosition();
+                entry.timer = setTimeout(() => removeNotification(entry), options.duration || 3000);
+                return entry;
+            }
+
             function showToast(msg) {
-                const toast = document.getElementById('game-toast');
-                if (!toast) return;
-                toast.textContent = msg;
-                toast.classList.add('show');
-                if (toastTimer) clearTimeout(toastTimer);
-                toastTimer = setTimeout(() => {
-                    toast.classList.remove('show');
-                }, 3000);
+                pushNotification(msg);
             }
 
             // ================================================================
@@ -1899,20 +1946,26 @@
                 let selectedPlayerSocketId = null;
                 let selectedPlayerUserId = null;
                 let selectedPlayerIsFriend = false;
+                let selectedFriendProfile = null;
 
                 const playerProfileCard = document.getElementById('player-profile-card');
                 const playerProfileAvatar = document.getElementById('player-profile-avatar');
                 const playerProfilePlaceholder = document.getElementById('player-profile-placeholder');
                 const playerProfileName = document.getElementById('player-profile-name');
+                const playerProfileActivity = document.getElementById('player-profile-activity');
+                const playerPingButton = document.getElementById('player-ping-button');
                 const playerFriendButton = document.getElementById('player-friend-button');
 
                 window.openPlayerProfile = async (socketId) => {
                     selectedPlayerSocketId = socketId;
                     selectedPlayerUserId = null;
                     selectedPlayerIsFriend = false;
+                    selectedFriendProfile = null;
                     playerProfileCard.classList.add('visible');
+                    syncNotificationPosition();
                     playerProfileName.textContent = '';
                     playerProfileName.classList.remove('loaded');
+                    playerProfileActivity.textContent = '';
                     playerProfileAvatar.classList.remove('loaded');
                     playerProfileAvatar.removeAttribute('src');
                     playerProfileAvatar.style.display = 'none';
@@ -1920,6 +1973,8 @@
                     playerFriendButton.disabled = true;
                     playerFriendButton.textContent = 'Friend +';
                     playerFriendButton.classList.remove('remove-mode');
+                    playerPingButton.hidden = true;
+                    playerPingButton.textContent = 'Ping';
 
                     try {
                         const res = await fetch(`/api/players/${encodeURIComponent(socketId)}`);
@@ -1929,28 +1984,13 @@
 
                         selectedPlayerUserId = profile.id;
                         selectedPlayerIsFriend = profile.isFriend;
-                        playerProfileName.textContent = profile.displayName || 'Player';
-                        requestAnimationFrame(() => playerProfileName.classList.add('loaded'));
-                        if (profile.avatar) {
-                            playerProfileAvatar.style.display = 'block';
-                            playerProfileAvatar.onload = () => {
-                                if (selectedPlayerSocketId === socketId) {
-                                    playerProfileAvatar.classList.add('loaded');
-                                }
-                            };
-                            playerProfileAvatar.onerror = () => {
-                                if (selectedPlayerSocketId === socketId) {
-                                    playerProfileAvatar.style.display = 'none';
-                                    playerProfilePlaceholder.style.display = 'block';
-                                }
-                            };
-                            playerProfileAvatar.src = profile.avatar;
-                        } else {
-                            playerProfilePlaceholder.style.display = 'block';
-                        }
+                        setProfileIdentity(profile, () => selectedPlayerSocketId === socketId);
+                        setProfileActivity(profile);
                         playerFriendButton.textContent = profile.isFriend ? 'Remove friend' : 'Friend +';
                         playerFriendButton.classList.toggle('remove-mode', profile.isFriend);
                         playerFriendButton.disabled = false;
+                        playerPingButton.hidden = !profile.isFriend;
+                        playerPingButton.disabled = !profile.isOnline;
                     } catch (err) {
                         if (selectedPlayerSocketId !== socketId) return;
                         playerProfileName.textContent = err.message;
@@ -1962,8 +2002,10 @@
 
                 document.getElementById('player-profile-close').addEventListener('click', () => {
                     playerProfileCard.classList.remove('visible');
+                    syncNotificationPosition();
                     selectedPlayerSocketId = null;
                     selectedPlayerUserId = null;
+                    selectedFriendProfile = null;
                 });
 
                 playerFriendButton.addEventListener('click', async () => {
@@ -1985,15 +2027,16 @@
                         }
                         return;
                     }
-                    if (!selectedPlayerSocketId) return;
-                    const targetSocketId = selectedPlayerSocketId;
+                    if (!selectedPlayerSocketId && !selectedPlayerUserId) return;
                     playerFriendButton.disabled = true;
                     playerFriendButton.textContent = 'Adding…';
                     try {
                         const res = await fetch('/api/friends/add', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ socketId: targetSocketId }),
+                            body: JSON.stringify(selectedPlayerSocketId
+                                ? { socketId: selectedPlayerSocketId }
+                                : { targetUserId: selectedPlayerUserId }),
                         });
                         const data = await res.json();
                         if (!res.ok) throw new Error(data.error || 'Could not add friend.');
@@ -2002,15 +2045,32 @@
                             renderFriends();
                         }
                         selectedPlayerIsFriend = true;
+                        selectedFriendProfile = friends.find((friend) => friend.id === selectedPlayerUserId) || selectedFriendProfile;
                         playerFriendButton.textContent = 'Remove friend';
                         playerFriendButton.classList.add('remove-mode');
                         playerFriendButton.disabled = false;
+                        playerPingButton.hidden = false;
+                        playerPingButton.textContent = 'Ping';
+                        playerPingButton.disabled = playerProfileActivity.classList.contains('offline');
                         showToast(data.alreadyAdded ? 'Already in your friend list.' : 'Added to your friend list.');
                     } catch (err) {
                         playerFriendButton.disabled = false;
                         playerFriendButton.textContent = 'Friend +';
                         showToast(err.message);
                     }
+                });
+
+                playerPingButton.addEventListener('click', () => {
+                    if (playerPingButton.disabled || !selectedPlayerUserId || !selectedPlayerIsFriend) return;
+                    socket.emit('friend:ping', { friendId: selectedPlayerUserId });
+                    playerPingButton.disabled = true;
+                    playerPingButton.textContent = 'Pinged!';
+                    showToast(`Pinged ${playerProfileName.textContent}!`);
+                    setTimeout(() => {
+                        if (!selectedPlayerUserId) return;
+                        playerPingButton.textContent = 'Ping';
+                        playerPingButton.disabled = playerProfileActivity.classList.contains('offline');
+                    }, 2000);
                 });
 
                 const userSection = document.getElementById('user-section');
@@ -2042,12 +2102,6 @@
 
                 const friendsCount = document.getElementById('friends-count');
                 const friendsListEl = document.getElementById('friends-list');
-                const friendPingNotification = document.getElementById('friend-ping-notification');
-                const friendPingMessage = document.getElementById('friend-ping-message');
-                const friendPingAddButton = document.getElementById('friend-ping-add-button');
-                let pendingPingUserId = null;
-                let friendPingTimer = null;
-
                 function escapeHtml(str) {
                     if (!str) return '';
                     return String(str).replace(/[&<>"']/g, (m) => ({
@@ -2071,6 +2125,62 @@
                     const diffDays = Math.floor(diffHr / 24);
                     if (diffDays === 1) return 'yesterday';
                     return `${diffDays}d ago`;
+                }
+
+                function setProfileActivity(profile) {
+                    if (profile.isOnline) {
+                        playerProfileActivity.textContent = profile.currentWorld
+                            ? `Online · at ${profile.currentWorld}`
+                            : 'Online';
+                        playerProfileActivity.className = 'player-profile-activity online';
+                    } else {
+                        playerProfileActivity.textContent = `Last seen ${formatRelativeTime(profile.lastActive)}`;
+                        playerProfileActivity.className = 'player-profile-activity offline';
+                    }
+                    syncNotificationPosition();
+                }
+
+                function setProfileIdentity(profile, isCurrentSelection) {
+                    playerProfileName.textContent = profile.displayName || 'Player';
+                    requestAnimationFrame(() => {
+                        if (isCurrentSelection()) playerProfileName.classList.add('loaded');
+                    });
+                    playerProfileAvatar.classList.remove('loaded');
+                    playerProfileAvatar.removeAttribute('src');
+                    playerProfileAvatar.style.display = 'none';
+                    playerProfilePlaceholder.style.display = 'block';
+                    if (profile.avatar) {
+                        playerProfileAvatar.style.display = 'block';
+                        playerProfilePlaceholder.style.display = 'none';
+                        playerProfileAvatar.onload = () => {
+                            if (isCurrentSelection()) playerProfileAvatar.classList.add('loaded');
+                        };
+                        playerProfileAvatar.onerror = () => {
+                            if (isCurrentSelection()) {
+                                playerProfileAvatar.style.display = 'none';
+                                playerProfilePlaceholder.style.display = 'block';
+                            }
+                        };
+                        playerProfileAvatar.src = profile.avatar;
+                    }
+                }
+
+                function openFriendProfile(friend) {
+                    selectedPlayerSocketId = null;
+                    selectedPlayerUserId = friend.id;
+                    selectedPlayerIsFriend = true;
+                    selectedFriendProfile = friend;
+                    playerProfileCard.classList.add('visible');
+                    playerProfileName.classList.remove('loaded');
+                    setProfileIdentity(friend, () => selectedFriendProfile?.id === friend.id);
+                    setProfileActivity(friend);
+                    playerPingButton.hidden = false;
+                    playerPingButton.textContent = 'Ping';
+                    playerPingButton.disabled = !friend.isOnline;
+                    playerFriendButton.textContent = 'Remove friend';
+                    playerFriendButton.classList.add('remove-mode');
+                    playerFriendButton.disabled = false;
+                    syncNotificationPosition();
                 }
 
                 function renderProfile() {
@@ -2110,6 +2220,8 @@
                     for (const friend of friends) {
                         const row = document.createElement('div');
                         row.className = 'friend-row';
+                        row.style.cursor = 'pointer';
+                        row.addEventListener('click', () => openFriendProfile(friend));
 
                         const statusClass = friend.isOnline ? 'online' : 'offline';
                         let subtext = '';
@@ -2117,7 +2229,7 @@
 
                         if (friend.isOnline) {
                             if (friend.currentWorld) {
-                                subtext = `📍 ${friend.currentWorld}`;
+                                subtext = `at ${friend.currentWorld}`;
                                 isWorldTag = true;
                             } else {
                                 subtext = 'Online';
@@ -2141,13 +2253,24 @@
                             </div>
                             <div class="friend-actions">
                                 <button class="btn-ping" data-friend-id="${friend.id}" title="Send a quick ping">Ping</button>
-                                <button class="btn-remove-friend" data-friend-id="${friend.id}" title="Remove from your friend list">Remove</button>
                             </div>
                         `;
 
                         const pingBtn = row.querySelector('.btn-ping');
+                        pingBtn.disabled = !friend.isOnline;
+                        pingBtn.title = friend.isOnline ? 'Send a quick ping' : 'This friend is offline';
+                        const friendInfo = row.querySelector('.friend-info');
+                        friendInfo.tabIndex = 0;
+                        friendInfo.setAttribute('role', 'button');
+                        friendInfo.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openFriendProfile(friend);
+                            }
+                        });
                         pingBtn.addEventListener('click', (e) => {
                             e.stopPropagation();
+                            if (pingBtn.disabled || !friend.isOnline) return;
                             socket.emit('friend:ping', { friendId: friend.id });
                             pingBtn.textContent = 'Pinged!';
                             pingBtn.style.opacity = '0.6';
@@ -2156,19 +2279,6 @@
                                 pingBtn.style.opacity = '1';
                             }, 2000);
                             showToast(`Pinged ${friend.displayName}!`);
-                        });
-
-                        const removeBtn = row.querySelector('.btn-remove-friend');
-                        removeBtn.addEventListener('click', async (e) => {
-                            e.stopPropagation();
-                            removeBtn.disabled = true;
-                            try {
-                                await removeFriendById(friend.id);
-                                showToast(`Removed ${friend.displayName} from your friend list.`);
-                            } catch (err) {
-                                removeBtn.disabled = false;
-                                showToast(err.message);
-                            }
                         });
 
                         friendsListEl.appendChild(row);
@@ -2183,6 +2293,8 @@
                     renderFriends();
                     if (selectedPlayerUserId === friendId) {
                         selectedPlayerIsFriend = false;
+                        selectedFriendProfile = null;
+                        playerPingButton.hidden = true;
                         playerFriendButton.textContent = 'Friend +';
                         playerFriendButton.classList.remove('remove-mode');
                         playerFriendButton.disabled = false;
@@ -2219,21 +2331,6 @@
                     }
                     return data;
                 };
-
-                friendPingAddButton.addEventListener('click', async () => {
-                    if (!pendingPingUserId) return;
-                    friendPingAddButton.disabled = true;
-                    friendPingAddButton.textContent = 'Adding…';
-                    try {
-                        const data = await window.addFriendFromPing(pendingPingUserId);
-                        friendPingAddButton.textContent = 'Friend ✓';
-                        showToast(data.alreadyAdded ? 'Already in your friend list.' : 'Added to your friend list.');
-                    } catch (err) {
-                        friendPingAddButton.disabled = false;
-                        friendPingAddButton.textContent = 'Friend +';
-                        showToast(err.message);
-                    }
-                });
 
                 userCollapsed.addEventListener('click', (e) => {
                     userSection.classList.toggle('expanded');
@@ -2387,22 +2484,28 @@
                     if (idx >= 0) {
                         friends[idx] = { ...friends[idx], ...friendData };
                         renderFriends();
+                        if (selectedFriendProfile?.id === friendData.id) {
+                            selectedFriendProfile = { ...selectedFriendProfile, ...friendData };
+                            setProfileActivity(selectedFriendProfile);
+                            playerPingButton.disabled = !selectedFriendProfile.isOnline;
+                        }
                     }
                 });
 
                 socket.on('friend:pinged', (data) => {
-                    pendingPingUserId = data.fromId;
-                    friendPingMessage.textContent = data.fromWorld
+                    const message = data.fromWorld
                         ? `🔔 ${data.fromName} pinged you from ${data.fromWorld}`
                         : `🔔 ${data.fromName} pinged you`;
-                    friendPingAddButton.style.display = data.showFriendButton ? 'block' : 'none';
-                    friendPingAddButton.disabled = false;
-                    friendPingAddButton.textContent = 'Friend +';
-                    friendPingNotification.classList.add('show');
-                    if (friendPingTimer) clearTimeout(friendPingTimer);
-                    friendPingTimer = setTimeout(() => {
-                        friendPingNotification.classList.remove('show');
-                    }, 8000);
+                    pushNotification(message, {
+                        duration: 8000,
+                        action: data.showFriendButton ? {
+                            label: 'Friend +',
+                            run: async () => {
+                                const result = await window.addFriendFromPing(data.fromId);
+                                showToast(result.alreadyAdded ? 'Already in your friend list.' : 'Added to your friend list.');
+                            },
+                        } : null,
+                    });
                 });
 
                 socket.on('world:info', (data) => {
@@ -2775,6 +2878,7 @@
                     // Clear any held movement keys so the player decelerates
                     // naturally through the existing movement logic.
                     keys.w = false; keys.a = false; keys.s = false; keys.d = false;
+                    jumpPressed = false;
                     // Immediately send zero input to the server so it also
                     // stops accelerating this player.
                     sendMovementInput();

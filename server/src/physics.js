@@ -341,8 +341,12 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
     }
 
     // --- Jumping ---
-    // Track jump buffer: if jump was pressed, record time.
-    if (input.jump) {
+    // Treat jump as an edge-triggered action: holding the key cannot retrigger
+    // a jump after landing. Buffer only the initial press for landing assists.
+    const jumpIsPressed = !!input.jump;
+    const jumpJustPressed = jumpIsPressed && !playerState.jumpWasPressed;
+    playerState.jumpWasPressed = jumpIsPressed;
+    if (jumpJustPressed) {
         playerState.jumpBufferTime = time;
     }
 
@@ -353,7 +357,7 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
     const isGroundedOrCoyote = playerState.grounded || canCoyote;
 
     let justJumped = false;
-    if (isGroundedOrCoyote && (input.jump || canBuffer)) {
+    if (isGroundedOrCoyote && canBuffer) {
         vel.y = config.jumpForce;
         playerState.grounded = false;
         justJumped = true;
@@ -468,6 +472,7 @@ function createPhysicsState(spawnX, spawnY, spawnZ) {
         grounded: false,
         lastGroundedTime: -Infinity,
         jumpBufferTime: -Infinity,
+        jumpWasPressed: false,
     };
 }
 
@@ -479,6 +484,7 @@ function clonePhysicsState(state) {
         grounded: state.grounded,
         lastGroundedTime: state.lastGroundedTime,
         jumpBufferTime: state.jumpBufferTime,
+        jumpWasPressed: !!state.jumpWasPressed,
     };
 }
 
