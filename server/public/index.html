@@ -639,6 +639,50 @@
             transform: translateY(0);
         }
 
+        #friend-ping-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 120;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            max-width: min(440px, calc(100vw - 40px));
+            padding: 10px 12px;
+            background: rgba(24, 24, 28, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            border-radius: 9px;
+            color: #f3f4f6;
+            font-size: 0.82rem;
+            opacity: 0;
+            transform: translateY(-10px);
+            pointer-events: none;
+            transition: opacity 0.25s, transform 0.25s;
+        }
+
+        #friend-ping-notification.show {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        #friend-ping-message { flex: 1; }
+
+        #friend-ping-add-button {
+            flex-shrink: 0;
+            padding: 5px 9px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #friend-ping-add-button:disabled { opacity: 0.65; cursor: default; }
+
         #player-profile-card {
             display: none;
             position: fixed;
@@ -1047,6 +1091,10 @@
 
         <!-- Toast notification container -->
         <div id="game-toast"></div>
+        <div id="friend-ping-notification" role="status" aria-live="polite">
+            <span id="friend-ping-message"></span>
+            <button id="friend-ping-add-button" type="button">Friend +</button>
+        </div>
 
         <!-- Screen-facing profile card for a targeted player -->
         <div id="player-profile-card" role="dialog" aria-label="Player profile">
@@ -1443,6 +1491,7 @@
                     e.target.closest('#info-panel') ||
                     e.target.closest('#block-panel') ||
                     e.target.closest('#player-profile-card') ||
+                    e.target.closest('#friend-ping-notification') ||
                     e.target.closest('#game-toast')
                 )) return;
                 if (window.playerProfileIsOpening) {
@@ -1836,6 +1885,11 @@
 
                 const friendsCount = document.getElementById('friends-count');
                 const friendsListEl = document.getElementById('friends-list');
+                const friendPingNotification = document.getElementById('friend-ping-notification');
+                const friendPingMessage = document.getElementById('friend-ping-message');
+                const friendPingAddButton = document.getElementById('friend-ping-add-button');
+                let pendingPingUserId = null;
+                let friendPingTimer = null;
 
                 function escapeHtml(str) {
                     if (!str) return '';
@@ -1962,6 +2016,38 @@
                         console.error('Failed to load friends:', err);
                     }
                 }
+
+                window.addFriendFromPing = async (targetUserId) => {
+                    const res = await fetch('/api/friends/add', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ targetUserId }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Could not add friend.');
+                    if (Array.isArray(data.friends)) {
+                        friends = data.friends;
+                        renderFriends();
+                    } else {
+                        await loadFriends();
+                    }
+                    return data;
+                };
+
+                friendPingAddButton.addEventListener('click', async () => {
+                    if (!pendingPingUserId) return;
+                    friendPingAddButton.disabled = true;
+                    friendPingAddButton.textContent = 'Adding…';
+                    try {
+                        const data = await window.addFriendFromPing(pendingPingUserId);
+                        friendPingAddButton.textContent = 'Friend ✓';
+                        showToast(data.alreadyAdded ? 'Already in your friend list.' : 'Added to your friend list.');
+                    } catch (err) {
+                        friendPingAddButton.disabled = false;
+                        friendPingAddButton.textContent = 'Friend +';
+                        showToast(err.message);
+                    }
+                });
 
                 userCollapsed.addEventListener('click', (e) => {
                     userSection.classList.toggle('expanded');
@@ -2119,7 +2205,18 @@
                 });
 
                 socket.on('friend:pinged', (data) => {
-                    showToast(`🔔 ${data.fromName} pinged you!`);
+                    pendingPingUserId = data.fromId;
+                    friendPingMessage.textContent = data.fromWorld
+                        ? `🔔 ${data.fromName} pinged you from ${data.fromWorld}`
+                        : `🔔 ${data.fromName} pinged you`;
+                    friendPingAddButton.style.display = data.showFriendButton ? 'block' : 'none';
+                    friendPingAddButton.disabled = false;
+                    friendPingAddButton.textContent = 'Friend +';
+                    friendPingNotification.classList.add('show');
+                    if (friendPingTimer) clearTimeout(friendPingTimer);
+                    friendPingTimer = setTimeout(() => {
+                        friendPingNotification.classList.remove('show');
+                    }, 8000);
                 });
 
                 socket.on('world:info', (data) => {

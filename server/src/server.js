@@ -306,16 +306,21 @@ app.get("/api/players/:socketId", async (req, res) => {
 // POST /api/friends/add — Add an online player to the current user's friend list.
 app.post("/api/friends/add", async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const { socketId } = req.body || {};
-    if (typeof socketId !== "string") {
-        return res.status(400).json({ error: "A player socket ID is required." });
+    const { socketId, targetUserId } = req.body || {};
+    let friendId = null;
+    if (typeof socketId === "string") {
+        const targetPlayer = players.get(socketId);
+        if (targetPlayer) friendId = targetPlayer.userId;
+    } else if (typeof targetUserId === "string" && /^[a-f\d]{24}$/i.test(targetUserId)) {
+        friendId = targetUserId;
     }
-    const targetPlayer = players.get(socketId);
-    if (!targetPlayer || targetPlayer.userId === req.user.id) {
+    if (!friendId || friendId === req.user.id) {
         return res.status(404).json({ error: "Player is no longer available." });
     }
     try {
-        await prisma.friendship.create({ data: { userId: req.user.id, friendId: targetPlayer.userId } });
+        const targetUser = await prisma.user.findUnique({ where: { id: friendId }, select: { id: true } });
+        if (!targetUser) return res.status(404).json({ error: "Player was not found." });
+        await prisma.friendship.create({ data: { userId: req.user.id, friendId } });
         const friends = await getFriendsForUser(req.user.id);
         res.status(201).json({ success: true, alreadyAdded: false, friends });
     } catch (err) {
@@ -666,16 +671,30 @@ io.on("connection", async (socket) => {
     });
 
     // Friend ping event
-    socket.on("friend:ping", (data) => {
+    socket.on("friend:ping", async (data) => {
         if (!data || !data.friendId) return;
         const friendSockets = onlineUsers.get(data.friendId);
-        if (friendSockets && friendSockets.size > 0) {
+        if (!friendSockets || friendSockets.size === 0) return;
+        try {
+            const sender = await prisma.user.findUnique({
+                where: { id: dbUser.id },
+                select: { id: true, displayName: true, showWorldToFriends: true },
+            });
+            if (!sender) return;
+            const existingFriendship = await prisma.friendship.findUnique({
+                where: { userId_friendId: { userId: data.friendId, friendId: sender.id } },
+            });
+            const ping = {
+                fromId: sender.id,
+                fromName: sender.displayName,
+                fromWorld: sender.showWorldToFriends ? CURRENT_WORLD_NAME : null,
+                showFriendButton: !existingFriendship,
+            };
             for (const sId of friendSockets) {
-                io.to(sId).emit("friend:pinged", {
-                    fromId: dbUser.id,
-                    fromName: dbUser.displayName,
-                });
+                io.to(sId).emit("friend:pinged", ping);
             }
+        } catch (err) {
+            console.error("Failed to send friend ping:", err);
         }
     });
 
