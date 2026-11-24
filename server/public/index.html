@@ -608,6 +608,19 @@
             color: #ffffff;
         }
 
+        .btn-remove-friend {
+            background: rgba(248, 113, 113, 0.08);
+            border: 1px solid rgba(248, 113, 113, 0.22);
+            color: #fecaca;
+            font-size: 0.62rem;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-remove-friend:hover { background: rgba(248, 113, 113, 0.2); }
+
         .friends-empty {
             font-size: 0.68rem;
             color: #777;
@@ -746,6 +759,7 @@
 
         #player-friend-button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
         #player-friend-button:disabled { opacity: 0.65; cursor: default; }
+        #player-friend-button.remove-mode { border-color: rgba(248, 113, 113, 0.4); color: #fecaca; }
 
         /* ---- VERTICAL BLOCK DISCOVERY & SELECTION PANEL ---- */
         #block-panel {
@@ -1787,6 +1801,8 @@
                 let userProfile = { ...currentUser };
                 let friends = [];
                 let selectedPlayerSocketId = null;
+                let selectedPlayerUserId = null;
+                let selectedPlayerIsFriend = false;
 
                 const playerProfileCard = document.getElementById('player-profile-card');
                 const playerProfileAvatar = document.getElementById('player-profile-avatar');
@@ -1796,10 +1812,13 @@
 
                 window.openPlayerProfile = async (socketId) => {
                     selectedPlayerSocketId = socketId;
+                    selectedPlayerUserId = null;
+                    selectedPlayerIsFriend = false;
                     playerProfileCard.classList.add('visible');
                     playerProfileName.textContent = 'Loading…';
                     playerFriendButton.disabled = true;
                     playerFriendButton.textContent = 'Friend +';
+                    playerFriendButton.classList.remove('remove-mode');
 
                     try {
                         const res = await fetch(`/api/players/${encodeURIComponent(socketId)}`);
@@ -1807,6 +1826,8 @@
                         if (!res.ok) throw new Error(profile.error || 'Could not load player.');
                         if (selectedPlayerSocketId !== socketId) return;
 
+                        selectedPlayerUserId = profile.id;
+                        selectedPlayerIsFriend = profile.isFriend;
                         playerProfileName.textContent = profile.displayName || 'Player';
                         if (profile.avatar) {
                             playerProfileAvatar.src = profile.avatar;
@@ -1817,8 +1838,9 @@
                             playerProfileAvatar.style.display = 'none';
                             playerProfilePlaceholder.style.display = 'block';
                         }
-                        playerFriendButton.textContent = profile.isFriend ? 'Friend ✓' : 'Friend +';
-                        playerFriendButton.disabled = profile.isFriend;
+                        playerFriendButton.textContent = profile.isFriend ? 'Remove friend' : 'Friend +';
+                        playerFriendButton.classList.toggle('remove-mode', profile.isFriend);
+                        playerFriendButton.disabled = false;
                     } catch (err) {
                         playerProfileName.textContent = err.message;
                         playerFriendButton.disabled = true;
@@ -1828,10 +1850,29 @@
                 document.getElementById('player-profile-close').addEventListener('click', () => {
                     playerProfileCard.classList.remove('visible');
                     selectedPlayerSocketId = null;
+                    selectedPlayerUserId = null;
                 });
 
                 playerFriendButton.addEventListener('click', async () => {
-                    if (!selectedPlayerSocketId || playerFriendButton.disabled) return;
+                    if (playerFriendButton.disabled) return;
+                    if (selectedPlayerIsFriend && selectedPlayerUserId) {
+                        playerFriendButton.disabled = true;
+                        playerFriendButton.textContent = 'Removing…';
+                        try {
+                            await removeFriendById(selectedPlayerUserId);
+                            selectedPlayerIsFriend = false;
+                            playerFriendButton.textContent = 'Friend +';
+                            playerFriendButton.classList.remove('remove-mode');
+                            playerFriendButton.disabled = false;
+                            showToast('Removed from your friend list.');
+                        } catch (err) {
+                            playerFriendButton.textContent = 'Remove friend';
+                            playerFriendButton.disabled = false;
+                            showToast(err.message);
+                        }
+                        return;
+                    }
+                    if (!selectedPlayerSocketId) return;
                     const targetSocketId = selectedPlayerSocketId;
                     playerFriendButton.disabled = true;
                     playerFriendButton.textContent = 'Adding…';
@@ -1847,7 +1888,10 @@
                             friends = data.friends;
                             renderFriends();
                         }
-                        playerFriendButton.textContent = 'Friend ✓';
+                        selectedPlayerIsFriend = true;
+                        playerFriendButton.textContent = 'Remove friend';
+                        playerFriendButton.classList.add('remove-mode');
+                        playerFriendButton.disabled = false;
                         showToast(data.alreadyAdded ? 'Already in your friend list.' : 'Added to your friend list.');
                     } catch (err) {
                         playerFriendButton.disabled = false;
@@ -1984,6 +2028,7 @@
                             </div>
                             <div class="friend-actions">
                                 <button class="btn-ping" data-friend-id="${friend.id}" title="Send a quick ping">Ping</button>
+                                <button class="btn-remove-friend" data-friend-id="${friend.id}" title="Remove from your friend list">Remove</button>
                             </div>
                         `;
 
@@ -2000,8 +2045,36 @@
                             showToast(`Pinged ${friend.displayName}!`);
                         });
 
+                        const removeBtn = row.querySelector('.btn-remove-friend');
+                        removeBtn.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            removeBtn.disabled = true;
+                            try {
+                                await removeFriendById(friend.id);
+                                showToast(`Removed ${friend.displayName} from your friend list.`);
+                            } catch (err) {
+                                removeBtn.disabled = false;
+                                showToast(err.message);
+                            }
+                        });
+
                         friendsListEl.appendChild(row);
                     }
+                }
+
+                async function removeFriendById(friendId) {
+                    const res = await fetch(`/api/friends/${encodeURIComponent(friendId)}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Could not remove friend.');
+                    friends = friends.filter((friend) => friend.id !== friendId);
+                    renderFriends();
+                    if (selectedPlayerUserId === friendId) {
+                        selectedPlayerIsFriend = false;
+                        playerFriendButton.textContent = 'Friend +';
+                        playerFriendButton.classList.remove('remove-mode');
+                        playerFriendButton.disabled = false;
+                    }
+                    return data;
                 }
 
                 async function loadFriends() {
