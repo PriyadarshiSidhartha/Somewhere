@@ -1487,9 +1487,9 @@
                 fadeLength: 4,         // Soft fade beyond that area, in world units.
                 mapSize: 2048,
                 followStep: 0.5,        // Smaller values follow more smoothly, at some cost to stability.
-                lightOffsetX: 4,         // Smaller horizontal offsets keep shadows closer to objects.
+                lightOffsetX: 10,
                 lightOffsetY: 20,
-                lightOffsetZ: 4,
+                lightOffsetZ: 10,
                 bias: -0.0001,
             };
             sun.position.set(SHADOW_SETTINGS.lightOffsetX, SHADOW_SETTINGS.lightOffsetY, SHADOW_SETTINGS.lightOffsetZ);
@@ -1895,6 +1895,58 @@
 
             const remoteGeometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
             const remoteMaterial = new THREE.MeshLambertMaterial({ color: 0xff6b35 });
+            const PLAYER_NAME_TAG_OFFSET = window.PLAYER_NAME_TAG_OFFSET = { x: 0, y: -1.2, z: 0 };
+
+            function createRemoteNameTag(name) {
+                const label = String(name || 'Player');
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                const hudFont = getComputedStyle(document.body).fontFamily;
+                const font = `700 21px ${hudFont}`;
+                context.font = font;
+                canvas.width = Math.ceil(context.measureText(label).width) + 20;
+                canvas.height = 36;
+                context.font = font;
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+                context.shadowColor = 'rgba(0, 0, 0, 0.9)';
+                context.shadowBlur = 4;
+                context.shadowOffsetX = 1;
+                context.shadowOffsetY = 2;
+                context.fillStyle = '#ffffff';
+                context.fillText(label, canvas.width / 2, canvas.height / 2);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.colorSpace = THREE.SRGBColorSpace;
+                const material = new THREE.SpriteMaterial({
+                    map: texture,
+                    transparent: true,
+                    depthTest: false,
+                    depthWrite: false,
+                    toneMapped: false,
+                });
+                const tag = new THREE.Sprite(material);
+                tag.scale.set(canvas.width / 128, canvas.height / 128, 1);
+                tag.renderOrder = 20;
+                return tag;
+            }
+
+            document.fonts?.ready.then(() => {
+                for (const remote of remotePlayers.values()) {
+                    updateRemoteNameTag(remote, remote.name);
+                }
+            });
+
+            function updateRemoteNameTag(remote, name) {
+                if (remote.nameTag) {
+                    scene.remove(remote.nameTag);
+                    remote.nameTag.material.map.dispose();
+                    remote.nameTag.material.dispose();
+                }
+                remote.name = name;
+                remote.nameTag = createRemoteNameTag(name);
+                scene.add(remote.nameTag);
+            }
 
             function addRemotePlayer(playerData) {
                 if (remotePlayers.has(playerData.id)) return;
@@ -1908,18 +1960,26 @@
                 mesh.castShadow = true;
                 mesh.userData.socketId = playerData.id;
                 scene.add(mesh);
-                remotePlayers.set(playerData.id, {
+                const remote = {
                     mesh,
                     targetPos: { ...playerData.position },
                     name: playerData.name,
+                    nameTag: null,
                     chatSprite: null,
-                });
+                };
+                updateRemoteNameTag(remote, playerData.name);
+                remotePlayers.set(playerData.id, remote);
             }
 
             function removeRemotePlayer(socketId) {
                 const data = remotePlayers.get(socketId);
                 if (data) {
                     scene.remove(data.mesh);
+                    if (data.nameTag) {
+                        scene.remove(data.nameTag);
+                        data.nameTag.material.map.dispose();
+                        data.nameTag.material.dispose();
+                    }
                     if (data.chatSprite) scene.remove(data.chatSprite);
                     remotePlayers.delete(socketId);
                 }
@@ -2591,7 +2651,7 @@
                     } else {
                         const remote = remotePlayers.get(data.playerId);
                         if (remote) {
-                            remote.name = data.name;
+                            updateRemoteNameTag(remote, data.name);
                             if (data.avatar !== undefined) remote.avatar = data.avatar;
                         }
                     }
@@ -2796,12 +2856,16 @@
                 if (data.playerId === mySocketId) return; // we already show our own
                 const remote = remotePlayers.get(data.playerId);
                 if (!remote) return;
-                // Create a floating released chat sprite at the remote player's head.
+                // Start the released message exactly where its live typing
+                // sprite was rendered, avoiding a vertical jump on release.
+                const releasePosition = remote.chatSprite
+                    ? remote.chatSprite.position.clone()
+                    : getRemoteChatPosition(remote);
                 createReleasedChatSprite(
                     data.message,
-                    remote.mesh.position.x,
-                    remote.mesh.position.y + 1.3,
-                    remote.mesh.position.z
+                    releasePosition.x,
+                    releasePosition.y,
+                    releasePosition.z
                 );
             });
 
@@ -3023,6 +3087,21 @@
                 };
             }
 
+            function getRemoteChatPosition(remote) {
+                const yaw = remote.targetYaw || 0;
+                const offset = chatWorldOffset(
+                    CHAT_REMOTE_OFFSET_X,
+                    CHAT_REMOTE_OFFSET_Y,
+                    CHAT_REMOTE_OFFSET_Z,
+                    yaw
+                );
+                return {
+                    x: remote.mesh.position.x + offset.x,
+                    y: remote.mesh.position.y + offset.y,
+                    z: remote.mesh.position.z + offset.z,
+                };
+            }
+
             // Helper to safely apply chat font to 2D canvas context.
             // Automatically fixes syntax issues, unclosed quotes, and falls back to
             // regular weight or system fonts to guarantee canvas text never collapses to 10px default.
@@ -3232,13 +3311,8 @@
                 if (data.text && data.text.length > 0) {
                     remote.chatSprite = createTextSprite(data.text, CHAT_WRAP_WIDTH);
                     // Initial position (updated each frame in animate loop).
-                    const rYaw = remote.targetYaw || 0;
-                    const rOff = chatWorldOffset(CHAT_REMOTE_OFFSET_X, CHAT_REMOTE_OFFSET_Y, CHAT_REMOTE_OFFSET_Z, rYaw);
-                    remote.chatSprite.position.set(
-                        remote.mesh.position.x + rOff.x,
-                        remote.mesh.position.y + rOff.y,
-                        remote.mesh.position.z + rOff.z
-                    );
+                    const position = getRemoteChatPosition(remote);
+                    remote.chatSprite.position.set(position.x, position.y, position.z);
                     scene.add(remote.chatSprite);
                 }
             });
@@ -3433,33 +3507,6 @@
             highlightBox.renderOrder = 10;
             highlightBox.visible = false;
             scene.add(highlightBox);
-
-            const playerHighlightGlowGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.72, 1.92, 0.72));
-            const playerHighlightGlowMat = new THREE.LineBasicMaterial({
-                color: 0xffffff,
-                transparent: true,
-                opacity: 0.45,
-                depthTest: true,
-                depthWrite: false,
-                toneMapped: false,
-            });
-            const playerHighlightGlow = new THREE.LineSegments(playerHighlightGlowGeo, playerHighlightGlowMat);
-            playerHighlightGlow.renderOrder = 10;
-            playerHighlightGlow.visible = false;
-            scene.add(playerHighlightGlow);
-
-            const playerHighlightGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.68, 1.88, 0.68));
-            const playerHighlightMat = new THREE.LineBasicMaterial({
-                color: 0xffffff,
-                linewidth: 2,
-                depthTest: true,
-                depthWrite: false,
-                toneMapped: false,
-            });
-            const playerHighlight = new THREE.LineSegments(playerHighlightGeo, playerHighlightMat);
-            playerHighlight.renderOrder = 11;
-            playerHighlight.visible = false;
-            scene.add(playerHighlight);
 
             // Cast a ray from crosshair (center of screen) and find the closest reachable block.
             function getTargetBlock() {
@@ -3786,10 +3833,7 @@
 
                 // --- UPDATE TARGET BLOCK HIGHLIGHT ---
                 const targetHit = (pointerLocked && !chatMode) ? getTargetBlock() : null;
-                let targetPlayer = (pointerLocked && !chatMode) ? getTargetPlayer() : null;
-                if (targetPlayer && targetHit && targetHit.distance < targetPlayer.hit.distance) {
-                    targetPlayer = null;
-                }
+                const targetPlayer = (pointerLocked && !chatMode) ? getTargetPlayer() : null;
                 if (targetHit && (!targetPlayer || targetHit.distance < targetPlayer.hit.distance)) {
                     highlightBox.position.set(
                         targetHit.object.userData.x,
@@ -3799,17 +3843,6 @@
                     highlightBox.visible = true;
                 } else {
                     highlightBox.visible = false;
-                }
-                if (targetPlayer) {
-                    playerHighlight.position.copy(targetPlayer.player.mesh.position);
-                    playerHighlight.rotation.copy(targetPlayer.player.mesh.rotation);
-                    playerHighlightGlow.position.copy(targetPlayer.player.mesh.position);
-                    playerHighlightGlow.rotation.copy(targetPlayer.player.mesh.rotation);
-                    playerHighlight.visible = true;
-                    playerHighlightGlow.visible = true;
-                } else {
-                    playerHighlight.visible = false;
-                    playerHighlightGlow.visible = false;
                 }
 
                 // --- POSITION LOCAL CHAT SPRITE (follows player each frame) ---
@@ -3868,15 +3901,18 @@
                         remote.mesh.rotation.y = remote.targetYaw;
                     }
 
+                    if (remote.nameTag) {
+                        remote.nameTag.position.set(
+                            remote.mesh.position.x + PLAYER_NAME_TAG_OFFSET.x,
+                            remote.mesh.position.y + PLAYER_NAME_TAG_OFFSET.y,
+                            remote.mesh.position.z + PLAYER_NAME_TAG_OFFSET.z
+                        );
+                    }
+
                     // Update remote chat sprite position (follows the remote player).
                     if (remote.chatSprite) {
-                        const rYaw = remote.targetYaw || 0;
-                        const rOff = chatWorldOffset(CHAT_REMOTE_OFFSET_X, CHAT_REMOTE_OFFSET_Y, CHAT_REMOTE_OFFSET_Z, rYaw);
-                        remote.chatSprite.position.set(
-                            remote.mesh.position.x + rOff.x,
-                            remote.mesh.position.y + rOff.y,
-                            remote.mesh.position.z + rOff.z
-                        );
+                        const position = getRemoteChatPosition(remote);
+                        remote.chatSprite.position.set(position.x, position.y, position.z);
                     }
                 }
 

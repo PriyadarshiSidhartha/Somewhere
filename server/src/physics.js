@@ -328,8 +328,11 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
     const hasInput = (forward !== 0 || strafe !== 0);
     const accelRate = hasInput ? config.acceleration : config.deceleration;
 
-    vel.x = moveToward(vel.x, targetVX, accelRate * dt);
-    vel.z = moveToward(vel.z, targetVZ, accelRate * dt);
+    const nextHorizontalVelocity = moveTowardVector2(
+        vel.x, vel.z, targetVX, targetVZ, accelRate * dt
+    );
+    vel.x = nextHorizontalVelocity.x;
+    vel.z = nextHorizontalVelocity.z;
 
     // --- Gravity ---
     if (!playerState.grounded) {
@@ -457,11 +460,24 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
 // UTILITY
 // --------------------------------------------------
 
+// Scalar helper retained for existing callers and physics utility tests.
 function moveToward(current, target, maxDelta) {
-    if (Math.abs(target - current) <= maxDelta) {
-        return target;
-    }
+    if (Math.abs(target - current) <= maxDelta) return target;
     return current + Math.sign(target - current) * maxDelta;
+}
+
+function moveTowardVector2(currentX, currentZ, targetX, targetZ, maxDelta) {
+    const deltaX = targetX - currentX;
+    const deltaZ = targetZ - currentZ;
+    const distance = Math.hypot(deltaX, deltaZ);
+    if (distance <= maxDelta || distance === 0) {
+        return { x: targetX, z: targetZ };
+    }
+    const scale = maxDelta / distance;
+    return {
+        x: currentX + deltaX * scale,
+        z: currentZ + deltaZ * scale,
+    };
 }
 
 // Create a fresh player physics state.
