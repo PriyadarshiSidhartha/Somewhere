@@ -196,6 +196,7 @@ function createSnapshot(playersIterable) {
             },
             yaw: Math.round(player.input.yaw * 1000) / 1000,
             grounded: player.physics.grounded,
+            jumpWasPressed: !!player.physics.jumpWasPressed,
             lastProcessedSeq: player.lastProcessedSeq,
         });
     }

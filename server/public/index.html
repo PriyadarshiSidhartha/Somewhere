@@ -1982,15 +1982,12 @@
                         if (!res.ok) throw new Error(profile.error || 'Could not load player.');
                         if (selectedPlayerSocketId !== socketId) return;
 
-                        selectedPlayerUserId = profile.id;
-                        selectedPlayerIsFriend = profile.isFriend;
-                        setProfileIdentity(profile, () => selectedPlayerSocketId === socketId);
-                        setProfileActivity(profile);
-                        playerFriendButton.textContent = profile.isFriend ? 'Remove friend' : 'Friend +';
-                        playerFriendButton.classList.toggle('remove-mode', profile.isFriend);
-                        playerFriendButton.disabled = false;
-                        playerPingButton.hidden = !profile.isFriend;
-                        playerPingButton.disabled = !profile.isOnline;
+                        // This endpoint only returns a profile for a socket that
+                        // is currently in the live player map. Treat that as the
+                        // authoritative online signal if older API responses do
+                        // not include presence fields yet.
+                        profile.isOnline = true;
+                        showPlayerProfile(profile, socketId);
                     } catch (err) {
                         if (selectedPlayerSocketId !== socketId) return;
                         playerProfileName.textContent = err.message;
@@ -2165,22 +2162,30 @@
                     }
                 }
 
-                function openFriendProfile(friend) {
-                    selectedPlayerSocketId = null;
-                    selectedPlayerUserId = friend.id;
-                    selectedPlayerIsFriend = true;
-                    selectedFriendProfile = friend;
+                function showPlayerProfile(profile, socketId = null, friendRecord = null) {
+                    selectedPlayerSocketId = socketId;
+                    selectedPlayerUserId = profile.id;
+                    selectedPlayerIsFriend = Boolean(profile.isFriend || friendRecord);
+                    selectedFriendProfile = friendRecord;
                     playerProfileCard.classList.add('visible');
                     playerProfileName.classList.remove('loaded');
-                    setProfileIdentity(friend, () => selectedFriendProfile?.id === friend.id);
-                    setProfileActivity(friend);
-                    playerPingButton.hidden = false;
+                    playerProfileActivity.className = 'player-profile-activity';
+                    const isCurrentSelection = () => socketId
+                        ? selectedPlayerSocketId === socketId
+                        : selectedFriendProfile?.id === profile.id;
+                    setProfileIdentity(profile, isCurrentSelection);
+                    setProfileActivity(profile);
+                    playerPingButton.hidden = !selectedPlayerIsFriend;
                     playerPingButton.textContent = 'Ping';
-                    playerPingButton.disabled = !friend.isOnline;
-                    playerFriendButton.textContent = 'Remove friend';
-                    playerFriendButton.classList.add('remove-mode');
+                    playerPingButton.disabled = !profile.isOnline;
+                    playerFriendButton.textContent = selectedPlayerIsFriend ? 'Remove friend' : 'Friend +';
+                    playerFriendButton.classList.toggle('remove-mode', selectedPlayerIsFriend);
                     playerFriendButton.disabled = false;
                     syncNotificationPosition();
+                }
+
+                function openFriendProfile(friend) {
+                    showPlayerProfile({ ...friend, isFriend: true }, null, friend);
                 }
 
                 function renderProfile() {
@@ -2652,6 +2657,7 @@
                         serverState.velocity.y = update.velocity.y;
                         serverState.velocity.z = update.velocity.z;
                         serverState.grounded = update.grounded;
+                        serverState.jumpWasPressed = !!update.jumpWasPressed;
 
                         // 2. Record the old predicted position for smooth correction.
                         const oldPredX = predictedState.position.x;
