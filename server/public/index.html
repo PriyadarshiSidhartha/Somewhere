@@ -946,12 +946,21 @@
 
         // --- Camera (Third-Person Pivot-Orbit) ---
         const CAMERA_FOV = 50;              // Field of view (degrees)
-        const CAMERA_PIVOT_HEIGHT = 0.75;    // Pivot point height above player feet (upper-chest level)
+        const CAMERA_PIVOT_HEIGHT = 1.35;   // Pivot point height above player feet (upper-chest level)
         const CAMERA_ARM_LENGTH = 4.75;      // Distance from pivot to camera (orbit radius)
         const CAMERA_SHOULDER_OFFSET = 1.5; // Horizontal offset to the right (over-the-shoulder)
         const CAMERA_PITCH_MIN = -1.0;      // Max look-down (radians, ~-57°)
         const CAMERA_PITCH_MAX = 0.8;       // Max look-up (radians, ~46°)
         const CAMERA_MIN_HEIGHT = 0.3;      // Minimum camera height above ground (avoid going underground)
+
+        // --- Camera Positional Sway & Follow ---
+        const CAMERA_SWAY_ENABLED = true;
+        const CAMERA_FOLLOW_SPEED_XZ = 14.0;  // Horizontal pivot tracking speed (damping factor)
+        const CAMERA_FOLLOW_SPEED_Y = 10.0;   // Vertical pivot tracking speed (smooths jumps/landing)
+        const CAMERA_SWAY_BOB_SPEED = 9.0;    // Footstep bobbing frequency multiplier
+        const CAMERA_SWAY_BOB_AMOUNT = 0.04;  // Subtle vertical bobbing amplitude (world units)
+        const CAMERA_SWAY_SIDE_AMOUNT = 0.035;// Subtle lateral sway amplitude (world units)
+        const CAMERA_SWAY_INERTIA = 0.025;    // Momentum sway opposing movement
 
         // --- Floating Chat Text ---
         // ================================================================
@@ -965,10 +974,10 @@
         const CHAT_FONT_WEIGHT = "normal"; // "normal", "bold", "600", etc.
         const CHAT_MAX_LENGTH = 100;   // Max characters before auto-release
         const CHAT_OFFSET_X = 0.0;  // Text offset right of player (world units)
-        const CHAT_OFFSET_Y = 0.1;  // Text offset above player pivot (world units)
+        const CHAT_OFFSET_Y = 1.1;  // Text offset above player center (above head level)
         const CHAT_OFFSET_Z = 0.0;  // Text offset forward/back from player
         const CHAT_REMOTE_OFFSET_X = 0.0;  // Same offsets for remote players
-        const CHAT_REMOTE_OFFSET_Y = 0.9;  // (higher because mesh anchor differs)
+        const CHAT_REMOTE_OFFSET_Y = 1.1;  // Same offset above remote player center
         const CHAT_REMOTE_OFFSET_Z = 0.0;
         const CHAT_SPRITE_HEIGHT = 0.5;  // Base height of a single text line (world units)
         const CHAT_FONT_SIZE = 48;   // Font size on the internal canvas (px)
@@ -1140,10 +1149,11 @@
 
             function updateCamera() {
                 // ---- Player mesh ----
-                // localPos.y is the capsule CENTER. Feet are at center - halfHeight.
+                // localPos is the capsule CENTER. BoxGeometry(0.6, 1.8, 0.6) is centered at (0, 0, 0),
+                // so localPlayerMesh matches the capsule position and bounds directly.
                 const halfH = window.Physics.capsuleHalfHeight(window.Physics.PHYSICS_CONFIG);
                 const feetY = localPos.y - halfH;
-                localPlayerMesh.position.set(localPos.x, feetY, localPos.z);
+                localPlayerMesh.position.set(localPos.x, localPos.y, localPos.z);
                 localPlayerMesh.rotation.y = cameraYaw;
 
                 // ---- Pivot point (upper chest) ----
@@ -1256,7 +1266,7 @@
             // what the player sees.
             function clientIsSolidAt(x, y, z) {
                 return blockMeshes.has(blockKey(
-                    Math.floor(x), Math.floor(y), Math.floor(z)
+                    Math.round(x), Math.round(y), Math.round(z)
                 ));
             }
 
@@ -1273,11 +1283,10 @@
             function addRemotePlayer(playerData) {
                 if (remotePlayers.has(playerData.id)) return;
                 const mesh = new THREE.Mesh(remoteGeometry, remoteMaterial);
-                // Position is capsule center; convert to feet for mesh.
-                const rHH = window.Physics.capsuleHalfHeight(window.Physics.PHYSICS_CONFIG);
+                // Position is capsule center, matching the centered BoxGeometry.
                 mesh.position.set(
                     playerData.position.x,
-                    playerData.position.y - rHH, // capsule center → feet
+                    playerData.position.y,
                     playerData.position.z
                 );
                 mesh.castShadow = true;
@@ -2427,7 +2436,7 @@
                     // Check reach distance from player's body, not from the camera
                     const distFromPlayer = Math.hypot(
                         hit.point.x - localPos.x,
-                        hit.point.y - (localPos.y - 0.4),
+                        hit.point.y - localPos.y,
                         hit.point.z - localPos.z
                     );
                     if (distFromPlayer <= PLAYER_REACH) {
@@ -2601,8 +2610,7 @@
                 // Remote players use snapshot interpolation, NOT local prediction.
                 // targetPos is the capsule CENTER from server snapshots.
                 for (const [, remote] of remotePlayers) {
-                    // Convert capsule center to mesh position (feet).
-                    const targetMeshY = remote.targetPos.y - capsuleHH;
+                    const targetMeshY = remote.targetPos.y;
                     const rdx = remote.targetPos.x - remote.mesh.position.x;
                     const rdy = targetMeshY - remote.mesh.position.y;
                     const rdz = remote.targetPos.z - remote.mesh.position.z;

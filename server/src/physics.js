@@ -19,32 +19,32 @@
 
 const PHYSICS_CONFIG = {
     // --- Movement ---
-    moveSpeed:      8,      // Target horizontal speed (units/second)
-    acceleration:   40,     // How quickly player reaches target speed (units/s²)
-    deceleration:   30,     // How quickly player stops when no input (units/s²)
+    moveSpeed: 8,      // Target horizontal speed (units/second)
+    acceleration: 40,     // How quickly player reaches target speed (units/s²)
+    deceleration: 30,     // How quickly player stops when no input (units/s²)
 
     // --- Gravity & Jumping ---
-    gravity:          28,     // Downward acceleration (units/s²)
-    jumpForce:        10,     // Initial upward velocity on jump (units/s)
+    gravity: 28,     // Downward acceleration (units/s²)
+    jumpForce: 10,     // Initial upward velocity on jump (units/s)
     terminalVelocity: 40,     // Maximum falling speed (units/s)
 
     // --- Capsule Collision Shape ---
-    capsuleRadius:  0.3,    // Radius of the capsule cylinder/hemispheres
-    capsuleHeight:  1.8,    // Total height of the capsule (tip to tip)
-    collisionSkin:  0.001,  // Small tolerance to prevent floating-point sticking
+    capsuleRadius: 0.35,    // Radius of the capsule cylinder/hemispheres
+    capsuleHeight: 1.8,    // Total height of the capsule (tip to tip)
+    collisionSkin: 0.001,  // Small tolerance to prevent floating-point sticking
 
     // --- Jump Assists ---
-    coyoteTime:     0.12,   // Grace period after leaving ledge where jump is still allowed (seconds)
-    jumpBuffer:     0.10,   // Time window to register jump input before landing (seconds)
+    coyoteTime: 0.12,   // Grace period after leaving ledge where jump is still allowed (seconds)
+    jumpBuffer: 0.10,   // Time window to register jump input before landing (seconds)
 
     // --- Simulation ---
     physicsTickRate: 60,    // Fixed physics timestep frequency (Hz)
-    snapshotRate:    20,    // How often the server broadcasts state (Hz)
+    snapshotRate: 20,    // How often the server broadcasts state (Hz)
 
     // --- World Bounds ---
-    boundXZ:        30,     // World XZ boundary (from -bound to +bound)
-    boundYMin:     -10,     // Minimum Y (kill plane)
-    boundYMax:      50,     // Maximum Y
+    boundXZ: 1000,     // World XZ boundary (from -bound to +bound)
+    boundYMin: -10,     // Minimum Y (kill plane)
+    boundYMax: 100,     // Maximum Y
 };
 
 // Derived constants (computed once)
@@ -85,8 +85,8 @@ function capsuleAABB(cx, cy, cz, config) {
 // CAPSULE VS AXIS-ALIGNED BOX COLLISION
 // --------------------------------------------------
 
-// Each block occupies [bx, bx+1] × [by, by+1] × [bz, bz+1] in world space.
-// The block's integer coordinates (bx, by, bz) are its minimum corner.
+// Each block occupies [bx - 0.5, bx + 0.5] × [by - 0.5, by + 0.5] × [bz - 0.5, bz + 0.5] in world space.
+// The block's integer coordinates (bx, by, bz) are its center (matching Three.js BoxGeometry(1, 1, 1)).
 //
 // Collision test: find the closest point on the capsule's line segment
 // to the box, then check if that distance is less than the capsule radius.
@@ -98,13 +98,13 @@ function capsuleVsBlock(cx, cy, cz, config, bx, by, bz) {
     const hh = capsuleHalfHeight(config);
 
     // Capsule line segment endpoints (the two hemisphere centers).
-    const segTopY    = cy + hh - r;
+    const segTopY = cy + hh - r;
     const segBottomY = cy - hh + r;
 
-    // Block AABB: [bx, bx+1] × [by, by+1] × [bz, bz+1]
-    const boxMinX = bx, boxMaxX = bx + 1;
-    const boxMinY = by, boxMaxY = by + 1;
-    const boxMinZ = bz, boxMaxZ = bz + 1;
+    // Block AABB: centered at (bx, by, bz) with size 1x1x1
+    const boxMinX = bx - 0.5, boxMaxX = bx + 0.5;
+    const boxMinY = by - 0.5, boxMaxY = by + 0.5;
+    const boxMinZ = bz - 0.5, boxMaxZ = bz + 0.5;
 
     // Find the closest point on the capsule's vertical line segment
     // to the block AABB.
@@ -214,12 +214,12 @@ function resolveCollisions(cx, cy, cz, config, isSolidAt) {
         // Broad phase: compute AABB of capsule, find overlapping block cells.
         const aabb = capsuleAABB(cx, cy, cz, config);
 
-        const minBX = Math.floor(aabb.minX);
-        const maxBX = Math.floor(aabb.maxX);
-        const minBY = Math.floor(aabb.minY);
-        const maxBY = Math.floor(aabb.maxY);
-        const minBZ = Math.floor(aabb.minZ);
-        const maxBZ = Math.floor(aabb.maxZ);
+        const minBX = Math.floor(aabb.minX - 0.5 - config.collisionSkin);
+        const maxBX = Math.ceil(aabb.maxX + 0.5 + config.collisionSkin);
+        const minBY = Math.floor(aabb.minY - 0.5 - config.collisionSkin);
+        const maxBY = Math.ceil(aabb.maxY + 0.5 + config.collisionSkin);
+        const minBZ = Math.floor(aabb.minZ - 0.5 - config.collisionSkin);
+        const maxBZ = Math.ceil(aabb.maxZ + 0.5 + config.collisionSkin);
 
         let deepestPen = 0;
         let bestNx = 0, bestNy = 0, bestNz = 0;
@@ -273,11 +273,11 @@ function probeGrounded(cx, cy, cz, config, isSolidAt) {
     const probeY = feetY - probeDepth;
 
     // Check the block cells the capsule footprint overlaps at the probe Y.
-    const minBX = Math.floor(cx - r);
-    const maxBX = Math.floor(cx + r);
-    const minBZ = Math.floor(cz - r);
-    const maxBZ = Math.floor(cz + r);
-    const by = Math.floor(probeY);
+    const minBX = Math.round(cx - r);
+    const maxBX = Math.round(cx + r);
+    const minBZ = Math.round(cz - r);
+    const maxBZ = Math.round(cz + r);
+    const by = Math.round(probeY);
 
     for (let bx = minBX; bx <= maxBX; bx++) {
         for (let bz = minBZ; bz <= maxBZ; bz++) {
@@ -433,9 +433,9 @@ function physicsStep(playerState, input, isSolidAt, config, dt, time) {
     // --- World bounds clamping ---
     const b = config.boundXZ;
     if (cx < -b) { cx = -b; vel.x = 0; }
-    if (cx > b)  { cx = b;  vel.x = 0; }
+    if (cx > b) { cx = b; vel.x = 0; }
     if (cz < -b) { cz = -b; vel.z = 0; }
-    if (cz > b)  { cz = b;  vel.z = 0; }
+    if (cz > b) { cz = b; vel.z = 0; }
     if (cy < config.boundYMin) {
         // Kill plane — reset to spawn.
         cy = config.boundYMax;

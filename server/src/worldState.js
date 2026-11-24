@@ -175,7 +175,7 @@ function isValidBlockType(type) {
 // This is the bridge between the world representation and the physics engine.
 // All blocks in the world are considered solid unless we add a non-solid flag later.
 function isSolidAt(x, y, z) {
-    return blocks.has(key(Math.floor(x), Math.floor(y), Math.floor(z)));
+    return blocks.has(key(Math.round(x), Math.round(y), Math.round(z)));
 }
 
 // Returns the raw block at integer coordinates, or null.

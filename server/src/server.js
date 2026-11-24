@@ -131,7 +131,7 @@ async function notifyFriendsOfPresence(userId) {
             select: {
                 id: true,
                 displayName: true,
-                // avatar omitted due to schema mismatch
+                avatar: true,
                 showWorldToFriends: true,
                 lastActive: true,
             },
@@ -337,24 +337,8 @@ io.use(wrap(passport.initialize()));
 io.use(wrap(passport.session()));
 
 // Gate: reject socket connections from unauthenticated users.
-// In dev mode (no Google OAuth), auto-assign the dummy user if no session exists.
 io.use((socket, next) => {
     if (socket.request.user) {
-        return next();
-    }
-    // If we're running without real OAuth, allow connections with a dev user.
-    if (!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)) {
-        socket.request.user = {
-            id: "dev-user",
-            displayName: "Dev Player",
-            avatar: null,
-            showWorldToFriends: false,
-            lastActive: new Date(),
-            posX: 0,
-            posY: 5,
-            posZ: 0,
-            recentBlocks: [],
-        };
         return next();
     }
     next(new Error("Not authenticated"));
@@ -414,11 +398,10 @@ io.on("connection", async (socket) => {
     onlineUsers.get(dbUser.id).add(socket.id);
 
     // Update lastActive timestamp in DB
-    // Update lastActive timestamp in DB (disabled due to schema constraints)
-    // prisma.user.update({
-    //     where: { id: dbUser.id },
-    //     data: { lastActive: new Date() },
-    // }).catch((err) => console.error("Failed to update lastActive:", err));
+    prisma.user.update({
+        where: { id: dbUser.id },
+        data: { lastActive: new Date() },
+    }).catch((err) => console.error("Failed to update lastActive:", err));
 
     // Notify friends of presence
     notifyFriendsOfPresence(dbUser.id);

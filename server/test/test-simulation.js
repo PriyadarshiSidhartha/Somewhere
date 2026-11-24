@@ -23,9 +23,9 @@ console.log("=== RUNNING 3D SIMULATION UNIT TESTS ===\n");
 
 // Set up a simple collision world for tests: flat floor at y=0.
 function testIsSolidAt(x, y, z) {
-    const bx = Math.floor(x);
-    const by = Math.floor(y);
-    const bz = Math.floor(z);
+    const bx = Math.round(x);
+    const by = Math.round(y);
+    const bz = Math.round(z);
     // Flat floor: solid at y=0, nothing else.
     return by === 0 && bx >= -10 && bx < 10 && bz >= -10 && bz < 10;
 }

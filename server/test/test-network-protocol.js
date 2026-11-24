@@ -18,9 +18,9 @@ const {
 
 // Set up collision world (flat floor at y=0).
 function testIsSolidAt(x, y, z) {
-    const bx = Math.floor(x);
-    const by = Math.floor(y);
-    return by === 0 && bx >= -10 && bx < 10 && Math.floor(z) >= -10 && Math.floor(z) < 10;
+    const bx = Math.round(x);
+    const by = Math.round(y);
+    return by === 0 && bx >= -10 && bx < 10 && Math.round(z) >= -10 && Math.round(z) < 10;
 }
 setWorldCollisionFn(testIsSolidAt);
 
