@@ -3136,11 +3136,27 @@
             highlightBox.visible = false;
             scene.add(highlightBox);
 
-            const playerHighlightGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.66, 1.86, 0.66));
-            const playerHighlightMat = new THREE.LineBasicMaterial({
-                color: 0x7ecfff,
+            const playerHighlightGlowGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.72, 1.92, 0.72));
+            const playerHighlightGlowMat = new THREE.LineBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.45,
                 depthTest: true,
                 depthWrite: false,
+                toneMapped: false,
+            });
+            const playerHighlightGlow = new THREE.LineSegments(playerHighlightGlowGeo, playerHighlightGlowMat);
+            playerHighlightGlow.renderOrder = 10;
+            playerHighlightGlow.visible = false;
+            scene.add(playerHighlightGlow);
+
+            const playerHighlightGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.68, 1.88, 0.68));
+            const playerHighlightMat = new THREE.LineBasicMaterial({
+                color: 0xffffff,
+                linewidth: 2,
+                depthTest: true,
+                depthWrite: false,
+                toneMapped: false,
             });
             const playerHighlight = new THREE.LineSegments(playerHighlightGeo, playerHighlightMat);
             playerHighlight.renderOrder = 11;
@@ -3460,9 +3476,13 @@
                 if (targetPlayer) {
                     playerHighlight.position.copy(targetPlayer.player.mesh.position);
                     playerHighlight.rotation.copy(targetPlayer.player.mesh.rotation);
+                    playerHighlightGlow.position.copy(targetPlayer.player.mesh.position);
+                    playerHighlightGlow.rotation.copy(targetPlayer.player.mesh.rotation);
                     playerHighlight.visible = true;
+                    playerHighlightGlow.visible = true;
                 } else {
                     playerHighlight.visible = false;
+                    playerHighlightGlow.visible = false;
                 }
 
                 // --- POSITION LOCAL CHAT SPRITE (follows player each frame) ---
