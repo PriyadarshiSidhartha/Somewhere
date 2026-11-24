@@ -20,10 +20,13 @@
             --hud-font-family: 'Geist Pixel', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
         }
 
-        * {
+        *,
+        *::before,
+        *::after {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: inherit;
         }
 
         body,
@@ -697,26 +700,43 @@
         #friend-ping-add-button:disabled { opacity: 0.65; cursor: default; }
 
         #player-profile-card {
-            display: none;
+            display: block;
+            visibility: hidden;
+            opacity: 0;
             position: fixed;
-            top: 50%;
-            right: 28px;
-            transform: translateY(-50%);
-            width: min(290px, calc(100vw - 32px));
+            top: 16px;
+            right: 16px;
+            transform: translateY(-6px);
+            width: min(240px, calc(100vw - 32px));
             padding: 18px;
-            background: rgba(22, 22, 26, 0.86);
+            background: rgba(22, 22, 26, 0.75);
             backdrop-filter: blur(14px);
             -webkit-backdrop-filter: blur(14px);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.38);
             color: #fff;
             text-align: center;
             pointer-events: auto;
             z-index: 110;
+            transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
         }
 
-        #player-profile-card.visible { display: block; }
+        #player-profile-card.visible {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(0);
+            transition-delay: 0s;
+        }
+
+        #player-profile-name,
+        #player-profile-avatar {
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        #player-profile-name.loaded,
+        #player-profile-avatar.loaded { opacity: 1; }
 
         #player-profile-close {
             position: absolute;
@@ -742,6 +762,10 @@
             font-size: 1rem;
             font-weight: 700;
             overflow-wrap: anywhere;
+            min-height: 2.5em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #player-friend-button {
@@ -884,7 +908,7 @@
             bottom: 0;
             left: 0;
             width: 100%;
-            height: 220px;
+            height: 110px;
             background: linear-gradient(to top, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.12) 40%, rgba(255, 255, 255, 0) 100%);
             pointer-events: none;
             opacity: 0;
@@ -1498,12 +1522,11 @@
                 }
             }
 
-            // Request pointer lock on click anywhere in the game (even in chat mode),
-            // except when interacting with UI panels (left UI container, info panel, block panel, toast).
-            window.addEventListener('click', (e) => {
-                if (document.activeElement === blockSearchInput && e.target !== blockSearchInput) {
-                    blockSearchInput.blur();
-                }
+            // Request pointer lock on the initial press so the browser sees the
+            // request directly inside the user's gesture. Waiting for click can
+            // lose that activation after the profile panel releases pointer lock.
+            window.addEventListener('pointerdown', (e) => {
+                if (document.pointerLockElement === canvas) return;
                 if (e.target && e.target.closest && (
                     e.target.closest('#left-ui-container') ||
                     e.target.closest('#info-panel') ||
@@ -1512,11 +1535,14 @@
                     e.target.closest('#friend-ping-notification') ||
                     e.target.closest('#game-toast')
                 )) return;
-                if (window.playerProfileIsOpening) {
-                    window.playerProfileIsOpening = false;
-                    return;
-                }
                 requestLock();
+            });
+
+            // Keep search focus cleanup on click, separate from pointer-lock handling.
+            window.addEventListener('click', (e) => {
+                if (document.activeElement === blockSearchInput && e.target !== blockSearchInput) {
+                    blockSearchInput.blur();
+                }
             });
 
             // Programmatically exit pointer lock on Escape to avoid Chrome's
@@ -1885,7 +1911,12 @@
                     selectedPlayerUserId = null;
                     selectedPlayerIsFriend = false;
                     playerProfileCard.classList.add('visible');
-                    playerProfileName.textContent = 'Loading…';
+                    playerProfileName.textContent = '';
+                    playerProfileName.classList.remove('loaded');
+                    playerProfileAvatar.classList.remove('loaded');
+                    playerProfileAvatar.removeAttribute('src');
+                    playerProfileAvatar.style.display = 'none';
+                    playerProfilePlaceholder.style.display = 'none';
                     playerFriendButton.disabled = true;
                     playerFriendButton.textContent = 'Friend +';
                     playerFriendButton.classList.remove('remove-mode');
@@ -1899,20 +1930,32 @@
                         selectedPlayerUserId = profile.id;
                         selectedPlayerIsFriend = profile.isFriend;
                         playerProfileName.textContent = profile.displayName || 'Player';
+                        requestAnimationFrame(() => playerProfileName.classList.add('loaded'));
                         if (profile.avatar) {
-                            playerProfileAvatar.src = profile.avatar;
                             playerProfileAvatar.style.display = 'block';
-                            playerProfilePlaceholder.style.display = 'none';
+                            playerProfileAvatar.onload = () => {
+                                if (selectedPlayerSocketId === socketId) {
+                                    playerProfileAvatar.classList.add('loaded');
+                                }
+                            };
+                            playerProfileAvatar.onerror = () => {
+                                if (selectedPlayerSocketId === socketId) {
+                                    playerProfileAvatar.style.display = 'none';
+                                    playerProfilePlaceholder.style.display = 'block';
+                                }
+                            };
+                            playerProfileAvatar.src = profile.avatar;
                         } else {
-                            playerProfileAvatar.removeAttribute('src');
-                            playerProfileAvatar.style.display = 'none';
                             playerProfilePlaceholder.style.display = 'block';
                         }
                         playerFriendButton.textContent = profile.isFriend ? 'Remove friend' : 'Friend +';
                         playerFriendButton.classList.toggle('remove-mode', profile.isFriend);
                         playerFriendButton.disabled = false;
                     } catch (err) {
+                        if (selectedPlayerSocketId !== socketId) return;
                         playerProfileName.textContent = err.message;
+                        requestAnimationFrame(() => playerProfileName.classList.add('loaded'));
+                        playerProfilePlaceholder.style.display = 'block';
                         playerFriendButton.disabled = true;
                     }
                 };
@@ -2632,11 +2675,24 @@
             function setChatMode(active) {
                 chatMode = active;
                 if (chatHintEl) {
-                    chatHintEl.textContent = active ? '. . .' : 'Press Enter to chat';
                     if (active) {
+                        chatHintEl.textContent = '. . .';
                         chatHintEl.classList.add('in-chat');
                     } else {
                         chatHintEl.classList.remove('in-chat');
+                        const updateHint = (event) => {
+                            if (event.propertyName !== 'font-size' || chatMode) return;
+                            chatHintEl.textContent = 'Press Enter to chat';
+                            chatHintEl.removeEventListener('transitionend', updateHint);
+                        };
+                        chatHintEl.addEventListener('transitionend', updateHint);
+                        // Handle reduced motion or browsers that skip transitions.
+                        setTimeout(() => {
+                            if (!chatMode && !chatHintEl.classList.contains('in-chat')) {
+                                chatHintEl.textContent = 'Press Enter to chat';
+                            }
+                            chatHintEl.removeEventListener('transitionend', updateHint);
+                        }, 250);
                     }
                 }
                 if (chatGradientEl) {
@@ -3165,6 +3221,7 @@
             blockSearchInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
+                    e.stopPropagation();
                     if (currentSlots.length > 0 && currentSlots[0]) {
                         selectBlock(currentSlots[0].id);
                     }
@@ -3287,7 +3344,6 @@
                     const targetBlock = getTargetBlock();
                     if (targetPlayer && (!targetBlock || targetPlayer.hit.distance < targetBlock.distance)) {
                         e.preventDefault();
-                        window.playerProfileIsOpening = true;
                         window.openPlayerProfile(targetPlayer.socketId);
                         if (document.pointerLockElement) document.exitPointerLock();
                         return;

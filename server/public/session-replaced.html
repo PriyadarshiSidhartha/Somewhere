@@ -4,21 +4,43 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Session ended · Somewhere</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Geist+Pixel&family=Jersey+15&family=Playwrite+AU+SA+Guides:wght@400&family=Roboto:wght@400;700&display=swap"
+        rel="stylesheet">
     <style>
-        * { box-sizing: border-box; }
+        :root {
+            /* HUD UI FONT CONFIGURATION */
+            --hud-font-family: 'Geist Pixel', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
         html, body {
             width: 100%;
             min-height: 100%;
-            margin: 0;
+            background: #000000;
         }
+
+        body,
+        main {
+            font-family: var(--hud-font-family);
+        }
+
         body {
             min-height: 100vh;
             display: grid;
             place-items: center;
             padding: 24px;
-            background: #000;
-            color: #fff;
-            font: 600 clamp(1.2rem, 3vw, 2rem)/1.4 system-ui, sans-serif;
+            color: #ffffff;
+            font-size: clamp(1.2rem, 3vw, 2rem);
+            font-weight: 600;
+            line-height: 1.4;
             text-align: center;
         }
     </style>

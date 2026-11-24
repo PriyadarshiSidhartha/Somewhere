@@ -725,22 +725,8 @@ io.on("connection", async (socket) => {
             }
         }
 
-        // A replaced socket must not overwrite the position of the new session.
-        if (!socket.data.sessionReplaced) {
-            try {
-                await prisma.user.update({
-                    where: { id: p.userId },
-                    data: {
-                        posX: p.position.x,
-                        posY: p.position.y,
-                        posZ: p.position.z,
-                    },
-                });
-            } catch (err) {
-                console.error(`Failed to save position for ${p.name}:`, err);
-            }
-        }
-
+        // Remove the player from live state before doing database work. A slow
+        // MongoDB write must not leave a disconnected player visible or counted.
         players.delete(socket.id);
 
         // Broadcast updated world player count
@@ -753,6 +739,18 @@ io.on("connection", async (socket) => {
         socket.broadcast.emit("player_left", { playerId: socket.id, name: p.name });
 
         console.log(`${p.name} disconnected. Reason: ${reason}`);
+
+        // A replaced socket must not overwrite the position of the new session.
+        if (!socket.data.sessionReplaced) {
+            prisma.user.update({
+                where: { id: p.userId },
+                data: {
+                    posX: p.position.x,
+                    posY: p.position.y,
+                    posZ: p.position.z,
+                },
+            }).catch((err) => console.error(`Failed to save position for ${p.name}:`, err));
+        }
     });
 });
 
