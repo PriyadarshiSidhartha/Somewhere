@@ -381,6 +381,22 @@ io.on("connection", async (socket) => {
     // The authenticated user is on socket.request.user (set by Passport).
     const dbUser = socket.request.user;
 
+    // A user may have only one active game connection. The newest connection
+    // takes over and tells any previous tab why it is being disconnected.
+    const previousSockets = onlineUsers.get(dbUser.id);
+    if (previousSockets) {
+        for (const previousSocketId of previousSockets) {
+            const previousSocket = io.sockets.sockets.get(previousSocketId);
+            if (previousSocket) {
+                previousSocket.data.sessionReplaced = true;
+                previousSocket.emit("session:replaced", {
+                    message: "Looks like you joined from somewhere else",
+                });
+                previousSocket.disconnect(true);
+            }
+        }
+    }
+
     // Create the in-memory player using saved DB position.
     const player = createPlayer(socket.id, dbUser.displayName, {
         x: dbUser.posX,
@@ -665,18 +681,20 @@ io.on("connection", async (socket) => {
             }
         }
 
-        // Save the player's last position to MongoDB.
-        try {
-            await prisma.user.update({
-                where: { id: p.userId },
-                data: {
-                    posX: p.position.x,
-                    posY: p.position.y,
-                    posZ: p.position.z,
-                },
-            });
-        } catch (err) {
-            console.error(`Failed to save position for ${p.name}:`, err);
+        // A replaced socket must not overwrite the position of the new session.
+        if (!socket.data.sessionReplaced) {
+            try {
+                await prisma.user.update({
+                    where: { id: p.userId },
+                    data: {
+                        posX: p.position.x,
+                        posY: p.position.y,
+                        posZ: p.position.z,
+                    },
+                });
+            } catch (err) {
+                console.error(`Failed to save position for ${p.name}:`, err);
+            }
         }
 
         players.delete(socket.id);

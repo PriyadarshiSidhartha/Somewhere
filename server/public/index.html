@@ -1998,6 +1998,12 @@
             // ================================================================
 
             const socket = io();
+            let sessionWasReplaced = false;
+
+            socket.on('session:replaced', () => {
+                sessionWasReplaced = true;
+                window.location.replace('/session-replaced.html');
+            });
 
             // Initialize profile and friends system
             initProfileAndFriends(user, socket);
@@ -2058,6 +2064,7 @@
             // --- Disconnect handling ---
             socket.on('disconnect', (reason) => {
                 console.warn('[Socket] Disconnected from server:', reason);
+                if (sessionWasReplaced) return;
                 if (reason === 'io server disconnect') {
                     // Server forcefully terminated session
                     ScreenTransition.executeTransition(async () => {
