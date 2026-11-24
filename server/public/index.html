@@ -35,14 +35,15 @@
         }
 
         body {
-            background: #1a1a2e;
+            background: #000000;
             color: #eee;
             overflow: hidden;
         }
 
         /* ---- LOGIN SCREEN ---- */
         #login-screen {
-            display: flex;
+            display: none;
+            background: #000000;
             flex-direction: column;
             align-items: center;
             justify-content: center;
@@ -54,11 +55,23 @@
             font-size: 3rem;
             letter-spacing: 4px;
             color: #7ecfff;
+            text-shadow: 0 0 24px rgba(126, 207, 255, 0.25);
         }
 
         #login-screen p {
-            color: #aaa;
+            color: #888;
             font-size: 1rem;
+            letter-spacing: 0.5px;
+        }
+
+        #login-error-msg {
+            display: none;
+            color: #ff6b6b;
+            font-size: 0.95rem;
+            background: rgba(255, 107, 107, 0.1);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            padding: 8px 16px;
+            border-radius: 6px;
         }
 
         #google-login-btn {
@@ -74,10 +87,26 @@
             font-weight: 600;
             cursor: pointer;
             text-decoration: none;
+            transition: background 0.2s, transform 0.15s;
         }
 
         #google-login-btn:hover {
             background: #f0f0f0;
+            transform: translateY(-1px);
+        }
+
+        /* ---- SCREEN TRANSITION OVERLAY ---- */
+        #screen-transition-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #000000;
+            z-index: 9999999;
+            opacity: 1;
+            pointer-events: all;
+            will-change: opacity;
         }
 
         /* ---- GAME SCREEN ---- */
@@ -727,6 +756,24 @@
             flex-grow: 1;
         }
 
+        /* Chat Mode Bottom Soft White Vertical Gradient Overlay */
+        #chat-gradient-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 220px;
+            background: linear-gradient(to top, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.12) 40%, rgba(255, 255, 255, 0) 100%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.25s ease-in-out;
+            z-index: 5; /* Under HUD (left-ui is z-index 25, chat-hint is z-index 10) but above game canvas */
+        }
+
+        #chat-gradient-overlay.visible {
+            opacity: 1;
+        }
+
         /* Chat hint */
         #chat-hint {
             position: absolute;
@@ -738,6 +785,16 @@
             text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
             pointer-events: none;
             user-select: none;
+            z-index: 10;
+            transition: color 0.2s ease, font-size 0.2s ease, letter-spacing 0.2s ease;
+        }
+
+        #chat-hint.in-chat {
+            color: #ffffff;
+            font-size: 1.2rem;
+            letter-spacing: 4px;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(0, 0, 0, 0.9);
+            animation: breathe 1.4s ease-in-out infinite;
         }
 
         @keyframes breathe {
@@ -784,10 +841,14 @@
 
 <body>
 
+    <!-- SCREEN TRANSITION OVERLAY (Pure black at frame 0) -->
+    <div id="screen-transition-overlay"></div>
+
     <!-- LOGIN SCREEN -->
     <div id="login-screen">
         <h1>Somewhere</h1>
         <p>A minimal multiplayer 3D block world</p>
+        <div id="login-error-msg"></div>
         <a id="google-login-btn" href="/auth/google">
             <!-- Google logo SVG -->
             <svg width="20" height="20" viewBox="0 0 48 48">
@@ -807,6 +868,9 @@
     <!-- GAME SCREEN -->
     <div id="game-screen">
         <canvas id="game-canvas"></canvas>
+
+        <!-- Chat Mode Soft White Bottom Vertical Gradient (under HUD, above canvas) -->
+        <div id="chat-gradient-overlay"></div>
 
         <!-- Crosshair -->
         <div id="crosshair">+</div>
@@ -989,35 +1053,218 @@
         const CHAT_FADE_START = 0.4;  // Fraction of duration before fading begins
 
         // ================================================================
-        // STEP 1: CHECK AUTH — show login or game screen
+        // GLOBAL SCREEN TRANSITION MANAGER
+        // ================================================================
+
+        class ScreenTransitionManager {
+            constructor(overlayElement, options = {}) {
+                this.overlay = overlayElement;
+                this.defaultFadeInDuration = options.defaultFadeInDuration ?? 400;
+                this.defaultFadeOutDuration = options.defaultFadeOutDuration ?? 400;
+                this.defaultHoldDelay = options.defaultHoldDelay ?? 0;
+
+                // Starts pure black from frame 0
+                this._state = 'black';
+                this._currentOpacity = 1;
+                this._transitionQueue = Promise.resolve();
+                this._isBusy = false;
+            }
+
+            getState() {
+                return this._state;
+            }
+
+            isBlack() {
+                return this._state === 'black' && this._currentOpacity === 1;
+            }
+
+            setOverlayColor(color) {
+                if (this.overlay) {
+                    this.overlay.style.backgroundColor = color;
+                }
+            }
+
+            fadeToBlack(duration = this.defaultFadeInDuration) {
+                if (this._currentOpacity === 1 && this._state === 'black') {
+                    return Promise.resolve();
+                }
+
+                this._state = 'fading_to_black';
+                this.overlay.style.pointerEvents = 'all';
+
+                return new Promise((resolve) => {
+                    void this.overlay.offsetHeight;
+                    this.overlay.style.transition = `opacity ${duration}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+                    this.overlay.style.opacity = '1';
+                    this._currentOpacity = 1;
+
+                    let resolved = false;
+                    const onEnd = (e) => {
+                        if (resolved) return;
+                        if (e && e.target !== this.overlay) return;
+                        resolved = true;
+                        this.overlay.removeEventListener('transitionend', onEnd);
+                        clearTimeout(fallbackTimer);
+                        this._state = 'black';
+                        resolve();
+                    };
+
+                    const fallbackTimer = setTimeout(onEnd, duration + 50);
+                    this.overlay.addEventListener('transitionend', onEnd);
+                });
+            }
+
+            fadeFromBlack(duration = this.defaultFadeOutDuration) {
+                if (this._currentOpacity === 0 && this._state === 'visible') {
+                    return Promise.resolve();
+                }
+
+                this._state = 'fading_from_black';
+
+                return new Promise((resolve) => {
+                    void this.overlay.offsetHeight;
+                    this.overlay.style.transition = `opacity ${duration}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+                    this.overlay.style.opacity = '0';
+                    this._currentOpacity = 0;
+
+                    let resolved = false;
+                    const onEnd = (e) => {
+                        if (resolved) return;
+                        if (e && e.target !== this.overlay) return;
+                        resolved = true;
+                        this.overlay.removeEventListener('transitionend', onEnd);
+                        clearTimeout(fallbackTimer);
+                        this._state = 'visible';
+                        this.overlay.style.pointerEvents = 'none';
+                        resolve();
+                    };
+
+                    const fallbackTimer = setTimeout(onEnd, duration + 50);
+                    this.overlay.addEventListener('transitionend', onEnd);
+                });
+            }
+
+            holdBlack(duration = 0) {
+                if (duration > 0) {
+                    return new Promise((r) => setTimeout(r, duration));
+                }
+                return Promise.resolve();
+            }
+
+            executeTransition(operation, options = {}) {
+                const fadeInDuration = options.fadeInDuration ?? this.defaultFadeInDuration;
+                const fadeOutDuration = options.fadeOutDuration ?? this.defaultFadeOutDuration;
+                const holdDelay = options.holdDelay ?? this.defaultHoldDelay;
+
+                const task = async () => {
+                    this._isBusy = true;
+                    try {
+                        await this.fadeToBlack(fadeInDuration);
+
+                        if (holdDelay > 0) {
+                            await this.holdBlack(holdDelay);
+                        }
+
+                        let result = null;
+                        let operationError = null;
+                        if (typeof operation === 'function') {
+                            try {
+                                result = await operation();
+                            } catch (err) {
+                                operationError = err;
+                                console.error('[ScreenTransition] Error during transition operation:', err);
+                                if (typeof options.onError === 'function') {
+                                    await options.onError(err);
+                                }
+                            }
+                        }
+
+                        // Always fade back from black so the user is never stuck on a black screen
+                        await this.fadeFromBlack(fadeOutDuration);
+
+                        if (operationError && !options.onError) {
+                            throw operationError;
+                        }
+
+                        return result;
+                    } finally {
+                        this._isBusy = false;
+                    }
+                };
+
+                const chained = this._transitionQueue.then(task, task);
+                this._transitionQueue = chained.catch(() => {});
+                return chained;
+            }
+        }
+
+        const transitionOverlay = document.getElementById('screen-transition-overlay');
+        const ScreenTransition = new ScreenTransitionManager(transitionOverlay, {
+            defaultFadeInDuration: 400,
+            defaultFadeOutDuration: 400,
+        });
+        window.ScreenTransition = ScreenTransition;
+
+        // ================================================================
+        // STEP 1: CHECK AUTH — resolve auth before revealing screen
         // ================================================================
 
         const loginScreen = document.getElementById('login-screen');
         const gameScreen = document.getElementById('game-screen');
+        const loginErrorMsg = document.getElementById('login-error-msg');
 
         let currentUser = null;
 
-        const [meRes, blocksRes] = await Promise.all([
-            fetch('/api/me'),
-            fetch('/api/blocks'),
-        ]);
-        const meData = await meRes.json();
-        const blocksData = await blocksRes.json();
-        const blockCatalog = blocksData.blocks || [];
-        const defaultRecent = blocksData.defaultRecent || [];
+        try {
+            const [meRes, blocksRes] = await Promise.all([
+                fetch('/api/me').catch((e) => ({ ok: false, error: e })),
+                fetch('/api/blocks').catch((e) => ({ ok: false, error: e })),
+            ]);
 
-        if (!meData.loggedIn) {
-            // Not logged in — the login screen is already visible.
-        } else {
-            // Logged in — hide login, show game.
-            currentUser = meData.user;
-            loginScreen.style.display = 'none';
-            gameScreen.style.display = 'block';
+            let meData = { loggedIn: false };
+            if (meRes.ok) {
+                meData = await meRes.json().catch(() => ({ loggedIn: false }));
+            }
 
-            // Set HUD name
-            document.getElementById('hud-name').textContent = currentUser.displayName;
+            let blocksData = { blocks: [], defaultRecent: [] };
+            if (blocksRes.ok) {
+                blocksData = await blocksRes.json().catch(() => ({ blocks: [], defaultRecent: [] }));
+            }
 
-            startGame(currentUser, blockCatalog, defaultRecent);
+            const blockCatalog = blocksData.blocks || [];
+            const defaultRecent = blocksData.defaultRecent || [];
+
+            if (!meData.loggedIn) {
+                // Case A: User is NOT authenticated
+                // Screen remained pitch black while checking.
+                // Mount login page behind black overlay, then fade into it.
+                loginScreen.style.display = 'flex';
+                await ScreenTransition.fadeFromBlack(400);
+            } else {
+                // Case B: User IS already authenticated
+                // Keep screen black. Do NOT show login page or Google OAuth.
+                currentUser = meData.user;
+                loginScreen.style.display = 'none';
+                gameScreen.style.display = 'block';
+
+                // Set HUD name
+                const hudName = document.getElementById('hud-name');
+                if (hudName) hudName.textContent = currentUser.displayName;
+
+                // Wait until game session, world, and player are fully ready
+                await startGame(currentUser, blockCatalog, defaultRecent);
+
+                // Reveal the game world cleanly
+                await ScreenTransition.fadeFromBlack(500);
+            }
+        } catch (err) {
+            console.error('[Auth/Init] Startup error:', err);
+            loginScreen.style.display = 'flex';
+            if (loginErrorMsg) {
+                loginErrorMsg.textContent = 'Connection error. Please refresh or try again.';
+                loginErrorMsg.style.display = 'block';
+            }
+            await ScreenTransition.fadeFromBlack(400);
         }
 
         // ================================================================
@@ -1025,8 +1272,38 @@
         // ================================================================
 
         function startGame(user, blockCatalog, defaultRecent) {
+            return new Promise((resolveGameReady) => {
+                let isGameReady = false;
+                let receivedWelcome = false;
+                let receivedWorldState = false;
+                let framesRendered = 0;
 
-            // ---- THREE.JS SCENE SETUP ----
+                function checkGameReady() {
+                    if (isGameReady) return;
+                    if (receivedWelcome && receivedWorldState) {
+                        const onRenderFrame = () => {
+                            framesRendered++;
+                            if (framesRendered >= 2) {
+                                isGameReady = true;
+                                resolveGameReady();
+                            } else {
+                                requestAnimationFrame(onRenderFrame);
+                            }
+                        };
+                        requestAnimationFrame(onRenderFrame);
+                    }
+                }
+
+                // Fallback safety timeout in case socket or network is delayed
+                setTimeout(() => {
+                    if (!isGameReady) {
+                        console.warn('[Startup] Readiness safety timeout reached, revealing scene');
+                        isGameReady = true;
+                        resolveGameReady();
+                    }
+                }, 8000);
+
+                // ---- THREE.JS SCENE SETUP ----
 
             const canvas = document.getElementById('game-canvas');
             const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -1760,6 +2037,10 @@
                 if (data.recentBlocks && Array.isArray(data.recentBlocks)) {
                     loadRecentBlocksFromServer(data.recentBlocks);
                 }
+
+                // Authoritative welcome signal received
+                receivedWelcome = true;
+                checkGameReady();
             });
 
             // --- Initial world blocks ---
@@ -1768,6 +2049,22 @@
                     addBlock(b.x, b.y, b.z, b.type);
                 }
                 console.log(`Loaded ${data.blocks.length} blocks.`);
+
+                // World geometry built and loaded into scene
+                receivedWorldState = true;
+                checkGameReady();
+            });
+
+            // --- Disconnect handling ---
+            socket.on('disconnect', (reason) => {
+                console.warn('[Socket] Disconnected from server:', reason);
+                if (reason === 'io server disconnect') {
+                    // Server forcefully terminated session
+                    ScreenTransition.executeTransition(async () => {
+                        gameScreen.style.display = 'none';
+                        loginScreen.style.display = 'flex';
+                    }, { fadeInDuration: 300, fadeOutDuration: 400 });
+                }
             });
 
             // --- Other players already in world ---
@@ -1794,6 +2091,9 @@
             socket.on('movement_snapshot', (data) => {
                 for (const update of data.players) {
                     if (update.id === mySocketId) {
+                        // While player is in death/respawn transition, ignore in-flight void snapshots
+                        if (isRespawning) continue;
+
                         // --- SERVER RECONCILIATION ---
                         // 1. Store the authoritative state.
                         serverState.position.x = update.position.x;
@@ -1923,6 +2223,28 @@
             let chatMode = false;
             let chatText = '';
 
+            const chatHintEl = document.getElementById('chat-hint');
+            const chatGradientEl = document.getElementById('chat-gradient-overlay');
+
+            function setChatMode(active) {
+                chatMode = active;
+                if (chatHintEl) {
+                    chatHintEl.textContent = active ? '. . .' : 'Press Enter to chat';
+                    if (active) {
+                        chatHintEl.classList.add('in-chat');
+                    } else {
+                        chatHintEl.classList.remove('in-chat');
+                    }
+                }
+                if (chatGradientEl) {
+                    if (active) {
+                        chatGradientEl.classList.add('visible');
+                    } else {
+                        chatGradientEl.classList.remove('visible');
+                    }
+                }
+            }
+
             window.addEventListener('keydown', (e) => {
                 // --- CHAT MODE INPUT ---
                 if (chatMode) {
@@ -1930,7 +2252,7 @@
                     if (e.key === 'Escape') {
                         // Cancel chat.
                         chatText = '';
-                        chatMode = false;
+                        setChatMode(false);
                         updateLocalChatSprite();
                         return;
                     }
@@ -1989,7 +2311,7 @@
                 // Enter chat mode with "Enter" key.
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    chatMode = true;
+                    setChatMode(true);
                     chatText = '';
                     // Clear any held movement keys so the player decelerates
                     // naturally through the existing movement logic.
@@ -2256,7 +2578,7 @@
                     createReleasedChatSprite(chatText.trim(), releaseX, releaseY, releaseZ);
                 }
                 chatText = '';
-                if (exitChatMode) chatMode = false;
+                if (exitChatMode) setChatMode(false);
                 // Remove typing sprite.
                 if (localChatSprite) {
                     scene.remove(localChatSprite);
@@ -2582,6 +2904,109 @@
             // Client-side physics accumulator for frame-rate-independent stepping.
             let clientAccumulator = 0;
 
+            // ================================================================
+            // PLAYER DEATH & RESPAWN
+            // ================================================================
+
+            let isRespawning = false;
+
+            async function handlePlayerDeath() {
+                if (isRespawning) return;
+                isRespawning = true;
+
+                // Close chat mode if currently typing
+                setChatMode(false);
+                chatText = '';
+                updateLocalChatSprite();
+
+                try {
+                    await ScreenTransition.executeTransition(async () => {
+                        // 1. Tell server to respawn player
+                        if (socket && socket.connected) {
+                            socket.emit('player:respawn');
+                        }
+
+                        // 2. Reset client player state to spawn
+                        const spawnX = 0;
+                        const spawnY = (typeof WORLD_CONFIG !== 'undefined' && WORLD_CONFIG.defaultY) ? WORLD_CONFIG.defaultY : 5;
+                        const spawnZ = 0;
+
+                        predictedState.position.x = spawnX;
+                        predictedState.position.y = spawnY;
+                        predictedState.position.z = spawnZ;
+                        predictedState.velocity.x = 0;
+                        predictedState.velocity.y = 0;
+                        predictedState.velocity.z = 0;
+                        predictedState.grounded = false;
+
+                        serverState.position.x = spawnX;
+                        serverState.position.y = spawnY;
+                        serverState.position.z = spawnZ;
+                        serverState.velocity.x = 0;
+                        serverState.velocity.y = 0;
+                        serverState.velocity.z = 0;
+                        serverState.grounded = false;
+
+                        prevPhysPos.x = spawnX;
+                        prevPhysPos.y = spawnY;
+                        prevPhysPos.z = spawnZ;
+
+                        localPos.x = spawnX;
+                        localPos.y = spawnY;
+                        localPos.z = spawnZ;
+
+                        smoothOffsetX = 0;
+                        smoothOffsetY = 0;
+                        smoothOffsetZ = 0;
+                        inputHistory.length = 0;
+                        keys.w = keys.a = keys.s = keys.d = false;
+                        jumpPressed = false;
+
+                        if (localPlayerMesh) {
+                            localPlayerMesh.position.set(spawnX, spawnY, spawnZ);
+                        }
+
+                        // Reset camera follow pivot so camera snaps cleanly to spawn without jarring lerp
+                        currentPivotX = null;
+                        currentPivotY = null;
+                        currentPivotZ = null;
+                        swayOffsetX = 0;
+
+                        // Wait for server respawn confirmation and 2 render frames so scene is settled
+                        await new Promise((resolve) => {
+                            let confirmed = false;
+                            const finish = () => {
+                                if (confirmed) return;
+                                confirmed = true;
+                                socket.off('player:respawn_confirmed', finish);
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(resolve);
+                                });
+                            };
+
+                            if (socket && socket.connected) {
+                                socket.once('player:respawn_confirmed', finish);
+                                setTimeout(finish, 400);
+                            } else {
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(resolve);
+                                });
+                            }
+                        });
+                    }, {
+                        fadeInDuration: 300,
+                        fadeOutDuration: 400,
+                        holdDelay: 100,
+                    });
+                } catch (err) {
+                    console.error('[Respawn] Error during respawn transition:', err);
+                } finally {
+                    isRespawning = false;
+                }
+            }
+
+            window.respawnPlayer = handlePlayerDeath;
+
             function animate() {
                 requestAnimationFrame(animate);
 
@@ -2594,6 +3019,11 @@
                 if (clientAccumulator > 0.25) clientAccumulator = 0.25; // cap spiral of death
 
                 while (clientAccumulator >= PHYSICS_DT) {
+                    if (isRespawning) {
+                        clientAccumulator = 0;
+                        break;
+                    }
+
                     prevPhysPos.x = predictedState.position.x;
                     prevPhysPos.y = predictedState.position.y;
                     prevPhysPos.z = predictedState.position.z;
@@ -2611,6 +3041,11 @@
 
                     physicsStep(predictedState, currentInput, clientIsSolidAt,
                         PC, PHYSICS_DT, clientSimTime);
+                }
+
+                // --- DEATH / VOID FALL DETECTION ---
+                if (predictedState && predictedState.position.y <= -8 && !isRespawning) {
+                    handlePlayerDeath();
                 }
 
                 // Sub-frame alpha interpolation for high refresh rate monitors (120Hz/144Hz/ProMotion)
@@ -2744,6 +3179,7 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
 
+            }); // end return new Promise((resolveGameReady) =>
         } // end startGame()
     </script>
 

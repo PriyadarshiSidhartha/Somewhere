@@ -444,6 +444,32 @@ io.on("connection", async (socket) => {
     socket.broadcast.emit("player_joined", getPublicPlayerState(player));
 
     // --------------------------------------------------
+    // PLAYER RESPAWN (DEATH / VOID FALL)
+    // --------------------------------------------------
+
+    socket.on("player:respawn", () => {
+        const p = players.get(socket.id);
+        if (!p) return;
+
+        p.physics.position.x = 0;
+        p.physics.position.y = WORLD_CONFIG.defaultY;
+        p.physics.position.z = 0;
+        p.physics.velocity.x = 0;
+        p.physics.velocity.y = 0;
+        p.physics.velocity.z = 0;
+        p.physics.grounded = false;
+
+        resetPlayerMovementInput(p);
+
+        socket.emit("player:respawn_confirmed", {
+            position: { x: p.physics.position.x, y: p.physics.position.y, z: p.physics.position.z },
+            velocity: { x: 0, y: 0, z: 0 },
+        });
+
+        console.log(`${p.name} respawned at (0, ${WORLD_CONFIG.defaultY}, 0)`);
+    });
+
+    // --------------------------------------------------
     // MOVEMENT INPUT
     // --------------------------------------------------
 
