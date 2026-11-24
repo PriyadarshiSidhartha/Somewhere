@@ -88,15 +88,10 @@ const onlineUsers = new Map();
 // Helper: retrieve friends for a user with privacy-filtered world and online presence
 async function getFriendsForUser(userId) {
     const friendships = await prisma.friendship.findMany({
-        where: {
-            OR: [
-                { userId: userId },
-                { friendId: userId },
-            ],
-        },
+        where: { userId },
     });
 
-    const friendIds = friendships.map((f) => (f.userId === userId ? f.friendId : f.userId));
+    const friendIds = friendships.map((f) => f.friendId);
     if (friendIds.length === 0) return [];
 
     const users = await prisma.user.findMany({
@@ -139,17 +134,11 @@ async function notifyFriendsOfPresence(userId) {
         if (!user) return;
 
         const isOnline = onlineUsers.has(userId) && onlineUsers.get(userId).size > 0;
-        const friendships = await prisma.friendship.findMany({
-            where: {
-                OR: [
-                    { userId: userId },
-                    { friendId: userId },
-                ],
-            },
-        });
+        // Only notify users who have added this person to their own list.
+        const friendships = await prisma.friendship.findMany({ where: { friendId: userId } });
 
         for (const f of friendships) {
-            const friendId = f.userId === userId ? f.friendId : f.userId;
+            const friendId = f.userId;
             const socketSet = onlineUsers.get(friendId);
             if (socketSet && socketSet.size > 0) {
                 const friendData = {
@@ -291,9 +280,51 @@ app.get("/api/friends", async (req, res) => {
     }
 });
 
-// POST /api/friends/add — Disabled (will be redesigned later)
-app.post("/api/friends/add", (req, res) => {
-    res.status(403).json({ error: "Adding friends by username is disabled." });
+// GET /api/players/:socketId — Profile details for a player currently in the world.
+app.get("/api/players/:socketId", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const targetPlayer = players.get(req.params.socketId);
+    if (!targetPlayer || targetPlayer.userId === req.user.id) {
+        return res.status(404).json({ error: "Player not found." });
+    }
+    try {
+        const targetUser = await prisma.user.findUnique({
+            where: { id: targetPlayer.userId },
+            select: { id: true, displayName: true, avatar: true },
+        });
+        if (!targetUser) return res.status(404).json({ error: "Player not found." });
+        const friendship = await prisma.friendship.findUnique({
+            where: { userId_friendId: { userId: req.user.id, friendId: targetUser.id } },
+        });
+        res.json({ ...targetUser, isFriend: !!friendship });
+    } catch (err) {
+        console.error("Failed to load player profile:", err);
+        res.status(500).json({ error: "Failed to load player profile." });
+    }
+});
+
+// POST /api/friends/add — Add an online player to the current user's friend list.
+app.post("/api/friends/add", async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const { socketId } = req.body || {};
+    if (typeof socketId !== "string") {
+        return res.status(400).json({ error: "A player socket ID is required." });
+    }
+    const targetPlayer = players.get(socketId);
+    if (!targetPlayer || targetPlayer.userId === req.user.id) {
+        return res.status(404).json({ error: "Player is no longer available." });
+    }
+    try {
+        await prisma.friendship.create({ data: { userId: req.user.id, friendId: targetPlayer.userId } });
+        const friends = await getFriendsForUser(req.user.id);
+        res.status(201).json({ success: true, alreadyAdded: false, friends });
+    } catch (err) {
+        if (err.code === "P2002") {
+            return res.json({ success: true, alreadyAdded: true });
+        }
+        console.error("Failed to add friend:", err);
+        res.status(500).json({ error: "Failed to add friend." });
+    }
 });
 
 // DELETE /api/friends/:id — Remove friend
@@ -305,16 +336,10 @@ app.delete("/api/friends/:id", async (req, res) => {
 
     try {
         await prisma.friendship.deleteMany({
-            where: {
-                OR: [
-                    { userId: req.user.id, friendId },
-                    { userId: friendId, friendId: req.user.id },
-                ],
-            },
+            where: { userId: req.user.id, friendId },
         });
 
         notifyFriendsOfPresence(req.user.id);
-        notifyFriendsOfPresence(friendId);
 
         res.json({ success: true });
     } catch (err) {

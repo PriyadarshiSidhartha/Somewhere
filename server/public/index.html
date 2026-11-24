@@ -639,6 +639,70 @@
             transform: translateY(0);
         }
 
+        #player-profile-card {
+            display: none;
+            position: fixed;
+            top: 50%;
+            right: 28px;
+            transform: translateY(-50%);
+            width: min(290px, calc(100vw - 32px));
+            padding: 18px;
+            background: rgba(22, 22, 26, 0.86);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+            color: #fff;
+            text-align: center;
+            pointer-events: auto;
+            z-index: 110;
+        }
+
+        #player-profile-card.visible { display: block; }
+
+        #player-profile-close {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            padding: 2px 6px;
+            border: 0;
+            background: transparent;
+            color: #9ca3af;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        #player-profile-avatar-wrap {
+            width: 72px;
+            height: 72px;
+            margin: 4px auto 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        #player-profile-name {
+            margin: 0 0 14px;
+            font-size: 1rem;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        #player-friend-button {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 7px;
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #player-friend-button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+        #player-friend-button:disabled { opacity: 0.65; cursor: default; }
+
         /* ---- VERTICAL BLOCK DISCOVERY & SELECTION PANEL ---- */
         #block-panel {
             padding: 8px;
@@ -983,6 +1047,17 @@
 
         <!-- Toast notification container -->
         <div id="game-toast"></div>
+
+        <!-- Screen-facing profile card for a targeted player -->
+        <div id="player-profile-card" role="dialog" aria-label="Player profile">
+            <button id="player-profile-close" type="button" aria-label="Close profile">×</button>
+            <div id="player-profile-avatar-wrap" class="user-avatar-wrap">
+                <img id="player-profile-avatar" class="user-avatar" alt="" style="display:none;" />
+                <div id="player-profile-placeholder" class="user-avatar-placeholder">👤</div>
+            </div>
+            <h2 id="player-profile-name">Player</h2>
+            <button id="player-friend-button" type="button">Friend +</button>
+        </div>
 
         <!-- Chat hint -->
         <div id="chat-hint">Press Enter to chat</div>
@@ -1367,8 +1442,13 @@
                     e.target.closest('#left-ui-container') ||
                     e.target.closest('#info-panel') ||
                     e.target.closest('#block-panel') ||
+                    e.target.closest('#player-profile-card') ||
                     e.target.closest('#game-toast')
                 )) return;
+                if (window.playerProfileIsOpening) {
+                    window.playerProfileIsOpening = false;
+                    return;
+                }
                 requestLock();
             });
 
@@ -1615,6 +1695,7 @@
                     playerData.position.z
                 );
                 mesh.castShadow = true;
+                mesh.userData.socketId = playerData.id;
                 scene.add(mesh);
                 remotePlayers.set(playerData.id, {
                     mesh,
@@ -1656,6 +1737,75 @@
             function initProfileAndFriends(currentUser, socket) {
                 let userProfile = { ...currentUser };
                 let friends = [];
+                let selectedPlayerSocketId = null;
+
+                const playerProfileCard = document.getElementById('player-profile-card');
+                const playerProfileAvatar = document.getElementById('player-profile-avatar');
+                const playerProfilePlaceholder = document.getElementById('player-profile-placeholder');
+                const playerProfileName = document.getElementById('player-profile-name');
+                const playerFriendButton = document.getElementById('player-friend-button');
+
+                window.openPlayerProfile = async (socketId) => {
+                    selectedPlayerSocketId = socketId;
+                    playerProfileCard.classList.add('visible');
+                    playerProfileName.textContent = 'Loading…';
+                    playerFriendButton.disabled = true;
+                    playerFriendButton.textContent = 'Friend +';
+
+                    try {
+                        const res = await fetch(`/api/players/${encodeURIComponent(socketId)}`);
+                        const profile = await res.json();
+                        if (!res.ok) throw new Error(profile.error || 'Could not load player.');
+                        if (selectedPlayerSocketId !== socketId) return;
+
+                        playerProfileName.textContent = profile.displayName || 'Player';
+                        if (profile.avatar) {
+                            playerProfileAvatar.src = profile.avatar;
+                            playerProfileAvatar.style.display = 'block';
+                            playerProfilePlaceholder.style.display = 'none';
+                        } else {
+                            playerProfileAvatar.removeAttribute('src');
+                            playerProfileAvatar.style.display = 'none';
+                            playerProfilePlaceholder.style.display = 'block';
+                        }
+                        playerFriendButton.textContent = profile.isFriend ? 'Friend ✓' : 'Friend +';
+                        playerFriendButton.disabled = profile.isFriend;
+                    } catch (err) {
+                        playerProfileName.textContent = err.message;
+                        playerFriendButton.disabled = true;
+                    }
+                };
+
+                document.getElementById('player-profile-close').addEventListener('click', () => {
+                    playerProfileCard.classList.remove('visible');
+                    selectedPlayerSocketId = null;
+                });
+
+                playerFriendButton.addEventListener('click', async () => {
+                    if (!selectedPlayerSocketId || playerFriendButton.disabled) return;
+                    const targetSocketId = selectedPlayerSocketId;
+                    playerFriendButton.disabled = true;
+                    playerFriendButton.textContent = 'Adding…';
+                    try {
+                        const res = await fetch('/api/friends/add', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ socketId: targetSocketId }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Could not add friend.');
+                        if (Array.isArray(data.friends)) {
+                            friends = data.friends;
+                            renderFriends();
+                        }
+                        playerFriendButton.textContent = 'Friend ✓';
+                        showToast(data.alreadyAdded ? 'Already in your friend list.' : 'Added to your friend list.');
+                    } catch (err) {
+                        playerFriendButton.disabled = false;
+                        playerFriendButton.textContent = 'Friend +';
+                        showToast(err.message);
+                    }
+                });
 
                 const userSection = document.getElementById('user-section');
                 const userCollapsed = document.getElementById('user-collapsed');
@@ -1986,6 +2136,12 @@
                         userProfile.displayName = data.name;
                         if (data.avatar !== undefined) userProfile.avatar = data.avatar;
                         renderProfile();
+                    } else {
+                        const remote = remotePlayers.get(data.playerId);
+                        if (remote) {
+                            remote.name = data.name;
+                            if (data.avatar !== undefined) remote.avatar = data.avatar;
+                        }
                     }
                 });
 
@@ -2792,6 +2948,7 @@
             const raycaster = new THREE.Raycaster();
             raycaster.far = 30;
             const PLAYER_REACH = 7.5; // Max interaction distance from player
+            const PLAYER_INTERACTION_RANGE = 7.5; // Max distance from player to target another player; tune here.
 
             // Highlight box that displays a clean, bright white outer silhouette
             // around the currently targeted block.
@@ -2808,6 +2965,17 @@
             highlightBox.renderOrder = 10;
             highlightBox.visible = false;
             scene.add(highlightBox);
+
+            const playerHighlightGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(0.66, 1.86, 0.66));
+            const playerHighlightMat = new THREE.LineBasicMaterial({
+                color: 0x7ecfff,
+                depthTest: true,
+                depthWrite: false,
+            });
+            const playerHighlight = new THREE.LineSegments(playerHighlightGeo, playerHighlightMat);
+            playerHighlight.renderOrder = 11;
+            playerHighlight.visible = false;
+            scene.add(playerHighlight);
 
             // Cast a ray from crosshair (center of screen) and find the closest reachable block.
             function getTargetBlock() {
@@ -2831,6 +2999,24 @@
                 return null;
             }
 
+            function getTargetPlayer() {
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const playerMeshes = Array.from(remotePlayers.values(), (player) => player.mesh);
+                const intersects = raycaster.intersectObjects(playerMeshes);
+                for (const hit of intersects) {
+                    const distFromPlayer = Math.hypot(
+                        hit.point.x - localPos.x,
+                        hit.point.y - localPos.y,
+                        hit.point.z - localPos.z
+                    );
+                    if (distFromPlayer <= PLAYER_INTERACTION_RANGE) {
+                        const player = remotePlayers.get(hit.object.userData.socketId);
+                        if (player) return { socketId: hit.object.userData.socketId, player, hit };
+                    }
+                }
+                return null;
+            }
+
             // Left-click (button 0): remove block
             // Right-click (button 2): place block
             document.addEventListener('mousedown', (e) => {
@@ -2841,6 +3027,15 @@
                 if (!pointerLocked || chatMode || isTyping) return;
 
                 if (e.button === 0) {
+                    const targetPlayer = getTargetPlayer();
+                    const targetBlock = getTargetBlock();
+                    if (targetPlayer && (!targetBlock || targetPlayer.hit.distance < targetBlock.distance)) {
+                        e.preventDefault();
+                        window.playerProfileIsOpening = true;
+                        window.openPlayerProfile(targetPlayer.socketId);
+                        if (document.pointerLockElement) document.exitPointerLock();
+                        return;
+                    }
                     // Left-click: remove the block you're looking at
                     const hit = getTargetBlock();
                     if (!hit) return;
@@ -3078,7 +3273,11 @@
 
                 // --- UPDATE TARGET BLOCK HIGHLIGHT ---
                 const targetHit = (pointerLocked && !chatMode) ? getTargetBlock() : null;
-                if (targetHit) {
+                let targetPlayer = (pointerLocked && !chatMode) ? getTargetPlayer() : null;
+                if (targetPlayer && targetHit && targetHit.distance < targetPlayer.hit.distance) {
+                    targetPlayer = null;
+                }
+                if (targetHit && (!targetPlayer || targetHit.distance < targetPlayer.hit.distance)) {
                     highlightBox.position.set(
                         targetHit.object.userData.x,
                         targetHit.object.userData.y,
@@ -3087,6 +3286,13 @@
                     highlightBox.visible = true;
                 } else {
                     highlightBox.visible = false;
+                }
+                if (targetPlayer) {
+                    playerHighlight.position.copy(targetPlayer.player.mesh.position);
+                    playerHighlight.rotation.copy(targetPlayer.player.mesh.rotation);
+                    playerHighlight.visible = true;
+                } else {
+                    playerHighlight.visible = false;
                 }
 
                 // --- POSITION LOCAL CHAT SPRITE (follows player each frame) ---
