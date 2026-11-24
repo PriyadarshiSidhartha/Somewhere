@@ -741,9 +741,12 @@
         }
 
         @keyframes breathe {
-            0%, 100% {
+
+            0%,
+            100% {
                 opacity: 0.3;
             }
+
             50% {
                 opacity: 1;
             }
@@ -946,21 +949,18 @@
 
         // --- Camera (Third-Person Pivot-Orbit) ---
         const CAMERA_FOV = 50;              // Field of view (degrees)
-        const CAMERA_PIVOT_HEIGHT = 1.35;   // Pivot point height above player feet (upper-chest level)
-        const CAMERA_ARM_LENGTH = 4.75;      // Distance from pivot to camera (orbit radius)
-        const CAMERA_SHOULDER_OFFSET = 1.5; // Horizontal offset to the right (over-the-shoulder)
+        const CAMERA_PIVOT_HEIGHT = 1.5;   // Pivot point height above player feet (upper-chest level)
+        const CAMERA_ARM_LENGTH = 4.25;      // Distance from pivot to camera (orbit radius)
+        const CAMERA_SHOULDER_OFFSET = 1.25; // Horizontal offset to the right (over-the-shoulder)
         const CAMERA_PITCH_MIN = -1.0;      // Max look-down (radians, ~-57°)
         const CAMERA_PITCH_MAX = 0.8;       // Max look-up (radians, ~46°)
         const CAMERA_MIN_HEIGHT = 0.3;      // Minimum camera height above ground (avoid going underground)
 
         // --- Camera Positional Sway & Follow ---
         const CAMERA_SWAY_ENABLED = true;
-        const CAMERA_FOLLOW_SPEED_XZ = 14.0;  // Horizontal pivot tracking speed (damping factor)
-        const CAMERA_FOLLOW_SPEED_Y = 10.0;   // Vertical pivot tracking speed (smooths jumps/landing)
-        const CAMERA_SWAY_BOB_SPEED = 9.0;    // Footstep bobbing frequency multiplier
-        const CAMERA_SWAY_BOB_AMOUNT = 0.04;  // Subtle vertical bobbing amplitude (world units)
-        const CAMERA_SWAY_SIDE_AMOUNT = 0.035;// Subtle lateral sway amplitude (world units)
-        const CAMERA_SWAY_INERTIA = 0.025;    // Momentum sway opposing movement
+        const CAMERA_FOLLOW_SPEED_XZ = 18.0;  // Horizontal pivot tracking speed (damping factor)
+        const CAMERA_FOLLOW_SPEED_Y = 14.0;   // Vertical pivot tracking speed (smooths jumps/landing)
+        const CAMERA_SWAY_SIDE_AMOUNT = 0.04; // Subtle lateral inertia when strafing/turning (world units)
 
         // --- Floating Chat Text ---
         // ================================================================
@@ -974,10 +974,10 @@
         const CHAT_FONT_WEIGHT = "normal"; // "normal", "bold", "600", etc.
         const CHAT_MAX_LENGTH = 100;   // Max characters before auto-release
         const CHAT_OFFSET_X = 0.0;  // Text offset right of player (world units)
-        const CHAT_OFFSET_Y = 1.1;  // Text offset above player center (above head level)
+        const CHAT_OFFSET_Y = 0.85;  // Text offset above player center (above head level)
         const CHAT_OFFSET_Z = 0.0;  // Text offset forward/back from player
         const CHAT_REMOTE_OFFSET_X = 0.0;  // Same offsets for remote players
-        const CHAT_REMOTE_OFFSET_Y = 1.1;  // Same offset above remote player center
+        const CHAT_REMOTE_OFFSET_Y = 0.85;  // Same offset above remote player center
         const CHAT_REMOTE_OFFSET_Z = 0.0;
         const CHAT_SPRITE_HEIGHT = 0.5;  // Base height of a single text line (world units)
         const CHAT_FONT_SIZE = 48;   // Font size on the internal canvas (px)
@@ -1147,7 +1147,13 @@
             //   Right   = ( cosY, 0, -sinY)
             //   Behind  = ( sinY, 0,  cosY)
 
-            function updateCamera() {
+            // Positional camera follow & sway state
+            let currentPivotX = null;
+            let currentPivotY = null;
+            let currentPivotZ = null;
+            let swayOffsetX = 0;
+
+            function updateCamera(dt = 0.016) {
                 // ---- Player mesh ----
                 // localPos is the capsule CENTER. BoxGeometry(0.6, 1.8, 0.6) is centered at (0, 0, 0),
                 // so localPlayerMesh matches the capsule position and bounds directly.
@@ -1156,37 +1162,80 @@
                 localPlayerMesh.position.set(localPos.x, localPos.y, localPos.z);
                 localPlayerMesh.rotation.y = cameraYaw;
 
-                // ---- Pivot point (upper chest) ----
-                const pivotX = localPos.x;
-                const pivotY = feetY + CAMERA_PIVOT_HEIGHT;
-                const pivotZ = localPos.z;
+                // ---- Target pivot point (upper chest) ----
+                const targetPivotX = localPos.x;
+                const targetPivotY = feetY + CAMERA_PIVOT_HEIGHT;
+                const targetPivotZ = localPos.z;
 
-                // ---- Orbit position ----
+                // Initialize or snap on large displacements (spawn, teleport, kill-plane reset)
+                if (currentPivotX === null) {
+                    currentPivotX = targetPivotX;
+                    currentPivotY = targetPivotY;
+                    currentPivotZ = targetPivotZ;
+                } else {
+                    const pDist = Math.hypot(
+                        targetPivotX - currentPivotX,
+                        targetPivotY - currentPivotY,
+                        targetPivotZ - currentPivotZ
+                    );
+                    if (pDist > 6) {
+                        currentPivotX = targetPivotX;
+                        currentPivotY = targetPivotY;
+                        currentPivotZ = targetPivotZ;
+                    }
+                }
+
+                // ---- Smooth pivot follow (eliminates rigid robotic camera attachment) ----
+                if (CAMERA_SWAY_ENABLED && dt > 0) {
+                    const factorXZ = 1 - Math.exp(-CAMERA_FOLLOW_SPEED_XZ * dt);
+                    const factorY = 1 - Math.exp(-CAMERA_FOLLOW_SPEED_Y * dt);
+                    currentPivotX += (targetPivotX - currentPivotX) * factorXZ;
+                    currentPivotY += (targetPivotY - currentPivotY) * factorY;
+                    currentPivotZ += (targetPivotZ - currentPivotZ) * factorXZ;
+                } else {
+                    currentPivotX = targetPivotX;
+                    currentPivotY = targetPivotY;
+                    currentPivotZ = targetPivotZ;
+                }
+
+                // ---- Orbit position around smoothed pivot ----
                 // The camera orbits around the pivot at CAMERA_ARM_LENGTH distance.
-                // pitch=0 → camera is level with pivot, behind the player.
-                // pitch<0 → camera rises above (looking down at player).
-                // pitch>0 → camera drops below (looking up past player).
+                // Mouse yaw and pitch remain 100% instantaneous and deterministic.
                 const sinY = Math.sin(cameraYaw);
                 const cosY = Math.cos(cameraYaw);
                 const cosP = Math.cos(cameraPitch);
                 const sinP = Math.sin(cameraPitch);
 
-                // Orbit offset in world space (behind and vertically orbiting).
-                // "Behind" direction (XZ, rotated by yaw): (sinY, cosY)
-                // Vertical component from pitch: arm * sinP goes up/down.
-                // Horizontal component from pitch: arm * cosP gives the XZ distance.
                 const armXZ = CAMERA_ARM_LENGTH * cosP;  // horizontal distance from pivot
-                const armY = -CAMERA_ARM_LENGTH * sinP;  // vertical offset (pitch<0 → armY>0 → above)
+                const armY = -CAMERA_ARM_LENGTH * sinP; // vertical offset (pitch<0 → armY>0 → above)
 
-                let camX = pivotX + sinY * armXZ;
-                let camY = pivotY + armY;
-                let camZ = pivotZ + cosY * armXZ;
+                let camX = currentPivotX + sinY * armXZ;
+                let camY = currentPivotY + armY;
+                let camZ = currentPivotZ + cosY * armXZ;
 
-                // ---- Shoulder offset (applied in world-right direction) ----
-                // This shifts the camera to the right WITHOUT changing where it
-                // looks, so the player appears on the left of the screen.
+                // ---- Shoulder offset (applied in camera-right direction) ----
                 camX += cosY * CAMERA_SHOULDER_OFFSET;
                 camZ -= sinY * CAMERA_SHOULDER_OFFSET;
+
+                // ---- Lateral momentum sway (smooth boom arm inertia) ----
+                if (CAMERA_SWAY_ENABLED && dt > 0) {
+                    const vx = (predictedState && predictedState.velocity) ? predictedState.velocity.x : 0;
+                    const vz = (predictedState && predictedState.velocity) ? predictedState.velocity.z : 0;
+
+                    // Project movement velocity onto camera-relative right axis
+                    const relRight = cosY * vx - sinY * vz;
+
+                    // Subtle lateral inertia offset opposing strafe/turn
+                    const targetSwayX = -(relRight / PC.moveSpeed) * CAMERA_SWAY_SIDE_AMOUNT;
+
+                    // Smoothly blend sway offset
+                    const swayDamp = 1 - Math.exp(-12 * dt);
+                    swayOffsetX += (targetSwayX - swayOffsetX) * swayDamp;
+
+                    // Apply lateral sway in camera-right direction
+                    camX += cosY * swayOffsetX;
+                    camZ -= sinY * swayOffsetX;
+                }
 
                 // ---- Clamp camera height above ground ----
                 if (camY < CAMERA_MIN_HEIGHT) camY = CAMERA_MIN_HEIGHT;
@@ -1194,11 +1243,10 @@
                 camera.position.set(camX, camY, camZ);
 
                 // ---- Look FORWARD (not at the player) ----
-                // The camera looks in the player's forward direction with pitch
-                // applied. This keeps camera and player yaw synchronised and
-                // prevents the shoulder offset from introducing an unwanted angle.
+                // The camera looks in the player's forward direction with pitch applied.
+                // This keeps camera aim synchronized with screen center crosshair and raycaster.
                 const lookDist = 50;
-                const fwdX = -sinY * cosP;  // forward direction with pitch
+                const fwdX = -sinY * cosP;
                 const fwdY = sinP;
                 const fwdZ = -cosY * cosP;
                 camera.lookAt(camX + fwdX * lookDist, camY + fwdY * lookDist, camZ + fwdZ * lookDist);
@@ -1689,6 +1737,9 @@
                     data.player.position.z
                 );
                 predictedState = clonePhysicsState(serverState);
+                prevPhysPos.x = predictedState.position.x;
+                prevPhysPos.y = predictedState.position.y;
+                prevPhysPos.z = predictedState.position.z;
                 smoothOffsetX = 0; smoothOffsetY = 0; smoothOffsetZ = 0;
                 inputHistory.length = 0;
                 lastAckedSeq = -1;
@@ -1784,6 +1835,10 @@
                         smoothOffsetY += oldPredY - newPredY;
                         smoothOffsetZ += oldPredZ - newPredZ;
 
+                        prevPhysPos.x = predictedState.position.x;
+                        prevPhysPos.y = predictedState.position.y;
+                        prevPhysPos.z = predictedState.position.z;
+
                         // If correction is very large, snap immediately.
                         const corrDist = Math.hypot(smoothOffsetX, smoothOffsetY, smoothOffsetZ);
                         if (corrDist > 5) {
@@ -1840,7 +1895,7 @@
 
             // Access the shared physics engine loaded via <script>.
             const { PHYSICS_CONFIG: PC, PHYSICS_DT, physicsStep,
-                    createPhysicsState, clonePhysicsState } = window.Physics;
+                createPhysicsState, clonePhysicsState } = window.Physics;
 
             const keys = { w: false, a: false, s: false, d: false };
             let jumpPressed = false;
@@ -2517,6 +2572,13 @@
                 z: user.position.z,
             };
 
+            // Previous physics position for sub-frame display interpolation (eliminates 60Hz vs 120Hz judder/ghosting)
+            const prevPhysPos = {
+                x: user.position.x,
+                y: user.position.y,
+                z: user.position.z,
+            };
+
             // Client-side physics accumulator for frame-rate-independent stepping.
             let clientAccumulator = 0;
 
@@ -2532,20 +2594,30 @@
                 if (clientAccumulator > 0.25) clientAccumulator = 0.25; // cap spiral of death
 
                 while (clientAccumulator >= PHYSICS_DT) {
+                    prevPhysPos.x = predictedState.position.x;
+                    prevPhysPos.y = predictedState.position.y;
+                    prevPhysPos.z = predictedState.position.z;
+
                     clientAccumulator -= PHYSICS_DT;
                     clientSimTime += PHYSICS_DT;
 
                     // Build the current input from key state.
                     const currentInput = {
                         forward: (keys.w ? 1 : 0) - (keys.s ? 1 : 0),
-                        strafe:  (keys.d ? 1 : 0) - (keys.a ? 1 : 0),
-                        yaw:     cameraYaw,
-                        jump:    jumpPressed,
+                        strafe: (keys.d ? 1 : 0) - (keys.a ? 1 : 0),
+                        yaw: cameraYaw,
+                        jump: jumpPressed,
                     };
 
                     physicsStep(predictedState, currentInput, clientIsSolidAt,
-                                PC, PHYSICS_DT, clientSimTime);
+                        PC, PHYSICS_DT, clientSimTime);
                 }
+
+                // Sub-frame alpha interpolation for high refresh rate monitors (120Hz/144Hz/ProMotion)
+                const alpha = Math.min(1, Math.max(0, clientAccumulator / PHYSICS_DT));
+                const interpX = prevPhysPos.x + (predictedState.position.x - prevPhysPos.x) * alpha;
+                const interpY = prevPhysPos.y + (predictedState.position.y - prevPhysPos.y) * alpha;
+                const interpZ = prevPhysPos.z + (predictedState.position.z - prevPhysPos.z) * alpha;
 
                 // --- SMOOTH VISUAL CORRECTION ---
                 // Decay the smoothing offset so visual catches up to prediction.
@@ -2554,13 +2626,13 @@
                 smoothOffsetY *= (1 - decay);
                 smoothOffsetZ *= (1 - decay);
 
-                // Final render position = predicted + smooth offset.
-                localPos.x = predictedState.position.x + smoothOffsetX;
-                localPos.y = predictedState.position.y + smoothOffsetY;
-                localPos.z = predictedState.position.z + smoothOffsetZ;
+                // Final render position = interpolated predicted + smooth offset.
+                localPos.x = interpX + smoothOffsetX;
+                localPos.y = interpY + smoothOffsetY;
+                localPos.z = interpZ + smoothOffsetZ;
 
                 // --- UPDATE THIRD-PERSON CAMERA ---
-                updateCamera();
+                updateCamera(dt);
 
                 // --- UPDATE TARGET BLOCK HIGHLIGHT ---
                 const targetHit = (pointerLocked && !chatMode) ? getTargetBlock() : null;
